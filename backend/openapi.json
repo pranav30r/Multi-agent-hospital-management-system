@@ -1,0 +1,4647 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Multi-Agent Hospital System",
+    "description": "Production-Grade Multi-Agent AI System for Hospital Resource Optimization, Clinical Workflow Automation, and Patient Care Coordination.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "Authentication & Security"
+        ],
+        "summary": "Login",
+        "description": "Authenticate hospital staff and generate a JWT bearer token.\nSupports both Swagger UI form-urlencoded login and frontend JSON POST login.\nDefault password for all seeded staff accounts: 'hospital@123'.",
+        "operationId": "login_api_v1_auth_login_post",
+        "parameters": [
+          {
+            "name": "args",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "title": "Args"
+            }
+          },
+          {
+            "name": "kwargs",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "title": "Kwargs"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/LoginJSONRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Json Data"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "Authentication & Security"
+        ],
+        "summary": "Get My Profile",
+        "description": "Retrieve identity and permissions for the currently authenticated staff token.",
+        "operationId": "get_my_profile_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffMeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "Authentication & Security"
+        ],
+        "summary": "Register Staff",
+        "description": "Register a new staff member and issue an authentication token.",
+        "operationId": "register_staff_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/patients": {
+      "post": {
+        "tags": [
+          "Patients & Intake"
+        ],
+        "summary": "Create Patient",
+        "description": "Register a new synthetic patient.",
+        "operationId": "create_patient_api_v1_patients_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Patients & Intake"
+        ],
+        "summary": "List Patients",
+        "description": "List all registered patients.",
+        "operationId": "list_patients_api_v1_patients_get",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PatientResponse"
+                  },
+                  "title": "Response List Patients Api V1 Patients Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/patients/{patient_id}": {
+      "get": {
+        "tags": [
+          "Patients & Intake"
+        ],
+        "summary": "Get Patient",
+        "description": "Get patient details by ID.",
+        "operationId": "get_patient_api_v1_patients__patient_id__get",
+        "parameters": [
+          {
+            "name": "patient_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Patient Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/patients/encounters": {
+      "post": {
+        "tags": [
+          "Patients & Intake"
+        ],
+        "summary": "Create Encounter",
+        "description": "Create a new hospital intake encounter for a patient.",
+        "operationId": "create_encounter_api_v1_patients_encounters_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EncounterCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EncounterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/patients/encounters/active": {
+      "get": {
+        "tags": [
+          "Patients & Intake"
+        ],
+        "summary": "List Active Encounters",
+        "description": "List all active hospital encounters.",
+        "operationId": "list_active_encounters_api_v1_patients_encounters_active_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EncounterResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Active Encounters Api V1 Patients Encounters Active Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/departments": {
+      "get": {
+        "tags": [
+          "Beds & Departments"
+        ],
+        "summary": "List Departments",
+        "description": "List all hospital departments and current capacity metrics.",
+        "operationId": "list_departments_api_v1_departments_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DepartmentResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Departments Api V1 Departments Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/beds": {
+      "get": {
+        "tags": [
+          "Beds & Departments"
+        ],
+        "summary": "List Beds",
+        "description": "List hospital beds with optional filters.",
+        "operationId": "list_beds_api_v1_beds_get",
+        "parameters": [
+          {
+            "name": "department_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Department Id"
+            }
+          },
+          {
+            "name": "bed_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bed Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BedResponse"
+                  },
+                  "title": "Response List Beds Api V1 Beds Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/beds/book-manual": {
+      "post": {
+        "tags": [
+          "Beds & Departments"
+        ],
+        "summary": "Book Bed Manually",
+        "description": "Directly book a bed for a patient (Bypasses AI recommendation).\nState transition: AVAILABLE -> RESERVED (NOT immediately OCCUPIED until patient physically arrives).",
+        "operationId": "book_bed_manually_api_v1_beds_book_manual_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualBedBookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/beds/{bed_id}/confirm-patient-in-bed": {
+      "post": {
+        "tags": [
+          "Beds & Departments"
+        ],
+        "summary": "Confirm Patient In Bed",
+        "description": "Confirms physical arrival of patient at the bed.\nState transition: RESERVED -> OCCUPIED.",
+        "operationId": "confirm_patient_in_bed_api_v1_beds__bed_id__confirm_patient_in_bed_post",
+        "parameters": [
+          {
+            "name": "bed_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bed Id"
+            }
+          },
+          {
+            "name": "staff_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "NUR-001",
+              "title": "Staff Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diseases": {
+      "get": {
+        "tags": [
+          "Disease Registry"
+        ],
+        "summary": "List Diseases",
+        "description": "List all registered diseases from the ICD-10 reference registry.",
+        "operationId": "list_diseases_api_v1_diseases_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DiseaseResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Diseases Api V1 Diseases Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Disease Registry"
+        ],
+        "summary": "Add Disease",
+        "description": "Add a new disease to the system registry (Receptionist feature).\nImmediately updates all disease selection dropdowns across the application.",
+        "operationId": "add_disease_api_v1_diseases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiseaseCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiseaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/emergencies/declare": {
+      "post": {
+        "tags": [
+          "Emergency Operations"
+        ],
+        "summary": "Declare Emergency",
+        "description": "Declare a hospital-wide emergency / mass casualty event (Dashboard button action).\nTriggers all emergency agents and escalates risk levels.",
+        "operationId": "declare_emergency_api_v1_emergencies_declare_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeclareEmergencyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmergencyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/emergencies/active": {
+      "get": {
+        "tags": [
+          "Emergency Operations"
+        ],
+        "summary": "List Active Emergencies",
+        "description": "Get active emergency events.",
+        "operationId": "list_active_emergencies_api_v1_emergencies_active_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EmergencyResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Active Emergencies Api V1 Emergencies Active Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/emergencies/{emergency_id}/resolve": {
+      "post": {
+        "tags": [
+          "Emergency Operations"
+        ],
+        "summary": "Resolve Emergency",
+        "description": "Resolve an emergency event and return system to normal operating state.",
+        "operationId": "resolve_emergency_api_v1_emergencies__emergency_id__resolve_post",
+        "parameters": [
+          {
+            "name": "emergency_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Emergency Id"
+            }
+          },
+          {
+            "name": "resolved_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "ADM-001",
+              "title": "Resolved By"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmergencyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/approvals/pending": {
+      "get": {
+        "tags": [
+          "Human-in-the-Loop Approvals"
+        ],
+        "summary": "List Pending Approvals",
+        "description": "List all pending items in the Human Review Queue requiring staff/clinician approval.",
+        "operationId": "list_pending_approvals_api_v1_approvals_pending_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApprovalItemResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Pending Approvals Api V1 Approvals Pending Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/approvals/{approval_id}/review": {
+      "post": {
+        "tags": [
+          "Human-in-the-Loop Approvals"
+        ],
+        "summary": "Review Approval Item",
+        "description": "Submit human decision (APPROVE / MODIFY / REJECT) for a pending AI recommendation.",
+        "operationId": "review_approval_item_api_v1_approvals__approval_id__review_post",
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Approval Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalItemResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/staff": {
+      "get": {
+        "tags": [
+          "Staff & Workforce"
+        ],
+        "summary": "List Staff",
+        "description": "List all hospital staff with optional filters.",
+        "operationId": "list_staff_api_v1_staff_get",
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by role: DOCTOR, NURSE, CHARGE_NURSE, TECHNICIAN, RECEPTIONIST, ADMINISTRATOR",
+              "title": "Role"
+            },
+            "description": "Filter by role: DOCTOR, NURSE, CHARGE_NURSE, TECHNICIAN, RECEPTIONIST, ADMINISTRATOR"
+          },
+          {
+            "name": "department_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by department ID",
+              "title": "Department Id"
+            },
+            "description": "Filter by department ID"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by status: AVAILABLE, BUSY, ON_BREAK, OFF_SHIFT",
+              "title": "Status"
+            },
+            "description": "Filter by status: AVAILABLE, BUSY, ON_BREAK, OFF_SHIFT"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaffResponse"
+                  },
+                  "title": "Response List Staff Api V1 Staff Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/staff/{staff_id}": {
+      "get": {
+        "tags": [
+          "Staff & Workforce"
+        ],
+        "summary": "Get Staff Member",
+        "description": "Get detailed information for a specific staff member.",
+        "operationId": "get_staff_member_api_v1_staff__staff_id__get",
+        "parameters": [
+          {
+            "name": "staff_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Staff Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/staff/{staff_id}/status": {
+      "patch": {
+        "tags": [
+          "Staff & Workforce"
+        ],
+        "summary": "Update Staff Status",
+        "description": "Update a staff member's operational status (AVAILABLE, BUSY, ON_BREAK, etc.).",
+        "operationId": "update_staff_status_api_v1_staff__staff_id__status_patch",
+        "parameters": [
+          {
+            "name": "staff_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Staff Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/staff/{staff_id}/workload": {
+      "patch": {
+        "tags": [
+          "Staff & Workforce"
+        ],
+        "summary": "Increment Workload",
+        "description": "Adjust a staff member's active patient workload count.",
+        "operationId": "increment_workload_api_v1_staff__staff_id__workload_patch",
+        "parameters": [
+          {
+            "name": "staff_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Staff Id"
+            }
+          },
+          {
+            "name": "delta",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "Increment (+1) or decrement (-1) workload",
+              "default": 1,
+              "title": "Delta"
+            },
+            "description": "Increment (+1) or decrement (-1) workload"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/staff/departments/{department_id}/ratios": {
+      "get": {
+        "tags": [
+          "Staff & Workforce"
+        ],
+        "summary": "Get Department Staffing Ratios",
+        "description": "Get current nurse:patient and doctor:patient ratios for a department.",
+        "operationId": "get_department_staffing_ratios_api_v1_staff_departments__department_id__ratios_get",
+        "parameters": [
+          {
+            "name": "department_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Department Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/staff/shifts/all": {
+      "get": {
+        "tags": [
+          "Staff & Workforce"
+        ],
+        "summary": "List Shifts",
+        "description": "List staff shift schedules.",
+        "operationId": "list_shifts_api_v1_staff_shifts_all_get",
+        "parameters": [
+          {
+            "name": "staff_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staff Id"
+            }
+          },
+          {
+            "name": "shift_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaffShiftResponse"
+                  },
+                  "title": "Response List Shifts Api V1 Staff Shifts All Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/staff/shifts": {
+      "post": {
+        "tags": [
+          "Staff & Workforce"
+        ],
+        "summary": "Create Shift",
+        "description": "Schedule a new shift for a staff member.",
+        "operationId": "create_shift_api_v1_staff_shifts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffShiftCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffShiftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/staff/{staff_id}/skills": {
+      "get": {
+        "tags": [
+          "Staff & Workforce"
+        ],
+        "summary": "List Staff Skills",
+        "description": "List all certified skills for a staff member.",
+        "operationId": "list_staff_skills_api_v1_staff__staff_id__skills_get",
+        "parameters": [
+          {
+            "name": "staff_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Staff Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaffSkillResponse"
+                  },
+                  "title": "Response List Staff Skills Api V1 Staff  Staff Id  Skills Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/staff/skills": {
+      "post": {
+        "tags": [
+          "Staff & Workforce"
+        ],
+        "summary": "Add Staff Skill",
+        "description": "Register a new certification/skill for a staff member.",
+        "operationId": "add_staff_skill_api_v1_staff_skills_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffSkillCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffSkillResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/equipment": {
+      "get": {
+        "tags": [
+          "Equipment & Resources"
+        ],
+        "summary": "List Equipment",
+        "description": "List all hospital equipment and resources with optional filters.",
+        "operationId": "list_equipment_api_v1_equipment_get",
+        "parameters": [
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter: CT_SCANNER, MRI, XRAY, VENTILATOR, ECG_MACHINE, etc.",
+              "title": "Resource Type"
+            },
+            "description": "Filter: CT_SCANNER, MRI, XRAY, VENTILATOR, ECG_MACHINE, etc."
+          },
+          {
+            "name": "department_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Department Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter: AVAILABLE, IN_USE, RESERVED, MAINTENANCE",
+              "title": "Status"
+            },
+            "description": "Filter: AVAILABLE, IN_USE, RESERVED, MAINTENANCE"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EquipmentResponse"
+                  },
+                  "title": "Response List Equipment Api V1 Equipment Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/equipment/{equipment_id}": {
+      "get": {
+        "tags": [
+          "Equipment & Resources"
+        ],
+        "summary": "Get Equipment",
+        "description": "Get details of a specific equipment resource.",
+        "operationId": "get_equipment_api_v1_equipment__equipment_id__get",
+        "parameters": [
+          {
+            "name": "equipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Equipment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquipmentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/equipment/{equipment_id}/status": {
+      "patch": {
+        "tags": [
+          "Equipment & Resources"
+        ],
+        "summary": "Update Equipment Status",
+        "description": "Update equipment operational status (AVAILABLE, MAINTENANCE, OUT_OF_SERVICE).",
+        "operationId": "update_equipment_status_api_v1_equipment__equipment_id__status_patch",
+        "parameters": [
+          {
+            "name": "equipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Equipment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EquipmentStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquipmentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/equipment/bookings": {
+      "post": {
+        "tags": [
+          "Equipment & Resources"
+        ],
+        "summary": "Create Equipment Booking",
+        "description": "Book a piece of equipment for a patient encounter (e.g., CT scan slot).",
+        "operationId": "create_equipment_booking_api_v1_equipment_bookings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EquipmentBookingCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquipmentBookingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/equipment/bookings/active": {
+      "get": {
+        "tags": [
+          "Equipment & Resources"
+        ],
+        "summary": "List Active Bookings",
+        "description": "List all currently active equipment bookings.",
+        "operationId": "list_active_bookings_api_v1_equipment_bookings_active_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EquipmentBookingResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Active Bookings Api V1 Equipment Bookings Active Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/equipment/bookings/{booking_id}/complete": {
+      "post": {
+        "tags": [
+          "Equipment & Resources"
+        ],
+        "summary": "Complete Booking",
+        "description": "Mark an equipment booking as completed and release the equipment.",
+        "operationId": "complete_booking_api_v1_equipment_bookings__booking_id__complete_post",
+        "parameters": [
+          {
+            "name": "booking_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Booking Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquipmentBookingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "tags": [
+          "Audit Trail & Security"
+        ],
+        "summary": "List Audit Logs",
+        "description": "Query the immutable audit trail.\nEvery state change in the hospital system is logged here for compliance and traceability.",
+        "operationId": "list_audit_logs_api_v1_audit_get",
+        "parameters": [
+          {
+            "name": "entity_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter: patient, bed, staff, equipment, emergency, approval",
+              "title": "Entity Type"
+            },
+            "description": "Filter: patient, bed, staff, equipment, emergency, approval"
+          },
+          {
+            "name": "entity_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by specific entity ID (e.g., BED-ICU-07)",
+              "title": "Entity Id"
+            },
+            "description": "Filter by specific entity ID (e.g., BED-ICU-07)"
+          },
+          {
+            "name": "changed_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by actor ID (staff or agent)",
+              "title": "Changed By"
+            },
+            "description": "Filter by actor ID (staff or agent)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditLogResponse"
+                  },
+                  "title": "Response List Audit Logs Api V1 Audit Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit/entity/{entity_type}/{entity_id}": {
+      "get": {
+        "tags": [
+          "Audit Trail & Security"
+        ],
+        "summary": "Get Entity History",
+        "description": "Get the complete change history for a specific entity (e.g., all changes to BED-ICU-07).",
+        "operationId": "get_entity_history_api_v1_audit_entity__entity_type___entity_id__get",
+        "parameters": [
+          {
+            "name": "entity_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Type"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditLogResponse"
+                  },
+                  "title": "Response Get Entity History Api V1 Audit Entity  Entity Type   Entity Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit/stats": {
+      "get": {
+        "tags": [
+          "Audit Trail & Security"
+        ],
+        "summary": "Audit Stats",
+        "description": "Get audit trail summary statistics.",
+        "operationId": "audit_stats_api_v1_audit_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/state": {
+      "get": {
+        "tags": [
+          "Hospital Dashboard State"
+        ],
+        "summary": "Get Hospital State",
+        "description": "Single unified endpoint returning the complete hospital operational state.\nThis is the primary data source for the Command Center frontend.\nDesigned to be polled every 2-3 seconds for near-real-time updates.",
+        "operationId": "get_hospital_state_api_v1_dashboard_state_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/departments/summary": {
+      "get": {
+        "tags": [
+          "Hospital Dashboard State"
+        ],
+        "summary": "Get Departments Summary",
+        "description": "Get per-department summary with bed utilization and staffing data.",
+        "operationId": "get_departments_summary_api_v1_dashboard_departments_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/definitions": {
+      "get": {
+        "tags": [
+          "Clinical Workflows & Operations"
+        ],
+        "summary": "List Workflow Definitions",
+        "description": "List all registered clinical workflow templates (e.g., Emergency Admission, OPD Visit, Transfer).",
+        "operationId": "list_workflow_definitions_api_v1_workflows_definitions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowDefinitionResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Workflow Definitions Api V1 Workflows Definitions Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/instances": {
+      "post": {
+        "tags": [
+          "Clinical Workflows & Operations"
+        ],
+        "summary": "Start Workflow Instance",
+        "description": "Start an active clinical workflow instance for a patient encounter.",
+        "operationId": "start_workflow_instance_api_v1_workflows_instances_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowInstanceCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowInstanceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Clinical Workflows & Operations"
+        ],
+        "summary": "List Workflow Instances",
+        "description": "List clinical workflow instances with optional filtering.",
+        "operationId": "list_workflow_instances_api_v1_workflows_instances_get",
+        "parameters": [
+          {
+            "name": "encounter_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Encounter Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "IN_PROGRESS, COMPLETED, CANCELLED",
+              "title": "Status"
+            },
+            "description": "IN_PROGRESS, COMPLETED, CANCELLED"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowInstanceResponse"
+                  },
+                  "title": "Response List Workflow Instances Api V1 Workflows Instances Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/instances/{instance_id}": {
+      "get": {
+        "tags": [
+          "Clinical Workflows & Operations"
+        ],
+        "summary": "Get Workflow Instance",
+        "description": "Retrieve details and progress of a specific workflow instance.",
+        "operationId": "get_workflow_instance_api_v1_workflows_instances__instance_id__get",
+        "parameters": [
+          {
+            "name": "instance_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Instance Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowInstanceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/instances/{instance_id}/advance": {
+      "post": {
+        "tags": [
+          "Clinical Workflows & Operations"
+        ],
+        "summary": "Advance Workflow Step",
+        "description": "Advance a clinical workflow to the next step.\nUpdates historical step completion, checks adherence, and concludes the workflow when last step finishes.",
+        "operationId": "advance_workflow_step_api_v1_workflows_instances__instance_id__advance_post",
+        "parameters": [
+          {
+            "name": "instance_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Instance Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepAdvanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowInstanceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/queues": {
+      "get": {
+        "tags": [
+          "Clinical Workflows & Operations"
+        ],
+        "summary": "List Department Queues",
+        "description": "Query live queue depths and estimated wait times per department.",
+        "operationId": "list_department_queues_api_v1_workflows_queues_get",
+        "parameters": [
+          {
+            "name": "department_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Department Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QueueResponse"
+                  },
+                  "title": "Response List Department Queues Api V1 Workflows Queues Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/tasks": {
+      "get": {
+        "tags": [
+          "Clinical Workflows & Operations"
+        ],
+        "summary": "List Clinical Tasks",
+        "description": "Query scheduled and active clinical workflow tasks.",
+        "operationId": "list_clinical_tasks_api_v1_workflows_tasks_get",
+        "parameters": [
+          {
+            "name": "encounter_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Encounter Id"
+            }
+          },
+          {
+            "name": "assigned_to_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assigned To Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "PENDING, IN_PROGRESS, COMPLETED",
+              "title": "Status"
+            },
+            "description": "PENDING, IN_PROGRESS, COMPLETED"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskResponse"
+                  },
+                  "title": "Response List Clinical Tasks Api V1 Workflows Tasks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/predictions/latest": {
+      "get": {
+        "tags": [
+          "Predictive Analytics & Forecasting"
+        ],
+        "summary": "Get Latest Predictions",
+        "description": "Retrieve the most recent predictive model runs for real-time dashboard visualization.",
+        "operationId": "get_latest_predictions_api_v1_predictions_latest_get",
+        "parameters": [
+          {
+            "name": "prediction_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "SURGE_FORECAST, ICU_BED_DEMAND, LENGTH_OF_STAY",
+              "title": "Prediction Type"
+            },
+            "description": "SURGE_FORECAST, ICU_BED_DEMAND, LENGTH_OF_STAY"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 5,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PredictionResponse"
+                  },
+                  "title": "Response Get Latest Predictions Api V1 Predictions Latest Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/predictions/history": {
+      "get": {
+        "tags": [
+          "Predictive Analytics & Forecasting"
+        ],
+        "summary": "List Prediction History",
+        "description": "Query historical predictions generated by the analytical engine.",
+        "operationId": "list_prediction_history_api_v1_predictions_history_get",
+        "parameters": [
+          {
+            "name": "model_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Name"
+            }
+          },
+          {
+            "name": "prediction_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prediction Type"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PredictionResponse"
+                  },
+                  "title": "Response List Prediction History Api V1 Predictions History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/predictions/record": {
+      "post": {
+        "tags": [
+          "Predictive Analytics & Forecasting"
+        ],
+        "summary": "Record Prediction Run",
+        "description": "Persist an inference result from the Prediction Engine or AI agents.\nLogs inference metrics and confidence scores to the database.",
+        "operationId": "record_prediction_run_api_v1_predictions_record_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionRecordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/predictions/metrics": {
+      "get": {
+        "tags": [
+          "Predictive Analytics & Forecasting"
+        ],
+        "summary": "Get Prediction Metrics",
+        "description": "Summary statistics for prediction models (average confidence, inference latency, total runs).",
+        "operationId": "get_prediction_metrics_api_v1_predictions_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/system/metrics": {
+      "get": {
+        "tags": [
+          "System Telemetry & Metrics"
+        ],
+        "summary": "Get System Metrics",
+        "description": "Returns deep system performance metrics:\n- Python environment & OS stats\n- Memory and CPU utilization\n- Database connectivity and pool stats\n- Service uptime",
+        "operationId": "get_system_metrics_api_v1_system_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Root",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health Check",
+        "operationId": "health_check_api_v1_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health Check",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApprovalActionRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "example": "APPROVE"
+          },
+          "reviewed_by": {
+            "type": "string",
+            "title": "Reviewed By",
+            "example": "DOC-003"
+          },
+          "modification": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modification",
+            "example": {
+              "recommended_bed_id": "BED-ICU-04"
+            }
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Reason",
+            "example": "Patient requires cardiac monitor bed ICU-04 instead of ICU-07"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "reviewed_by"
+        ],
+        "title": "ApprovalActionRequest"
+      },
+      "ApprovalItemResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "decision_id": {
+            "type": "string",
+            "title": "Decision Id"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "action_type": {
+            "type": "string",
+            "title": "Action Type"
+          },
+          "risk_level": {
+            "type": "string",
+            "title": "Risk Level"
+          },
+          "proposed_action": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Proposed Action"
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "review_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Action"
+          },
+          "modification": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modification"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "decision_id",
+          "agent_id",
+          "action_type",
+          "risk_level",
+          "proposed_action",
+          "reasoning",
+          "status",
+          "reviewed_by",
+          "review_action",
+          "modification",
+          "rejection_reason",
+          "created_at",
+          "reviewed_at"
+        ],
+        "title": "ApprovalItemResponse"
+      },
+      "AuditLogResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "entity_id": {
+            "type": "string",
+            "title": "Entity Id"
+          },
+          "field_changed": {
+            "type": "string",
+            "title": "Field Changed"
+          },
+          "old_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Value"
+          },
+          "new_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Value"
+          },
+          "changed_by": {
+            "type": "string",
+            "title": "Changed By"
+          },
+          "change_reason": {
+            "type": "string",
+            "title": "Change Reason"
+          },
+          "decision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Id"
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "timestamp",
+          "entity_type",
+          "entity_id",
+          "field_changed",
+          "old_value",
+          "new_value",
+          "changed_by",
+          "change_reason",
+          "decision_id",
+          "approval_id"
+        ],
+        "title": "AuditLogResponse"
+      },
+      "BedResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "department_id": {
+            "type": "string",
+            "title": "Department Id"
+          },
+          "bed_type": {
+            "type": "string",
+            "title": "Bed Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "is_isolation": {
+            "type": "boolean",
+            "title": "Is Isolation"
+          },
+          "has_ventilator": {
+            "type": "boolean",
+            "title": "Has Ventilator"
+          },
+          "has_telemetry": {
+            "type": "boolean",
+            "title": "Has Telemetry"
+          },
+          "current_patient_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Patient Id"
+          },
+          "current_encounter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Encounter Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "department_id",
+          "bed_type",
+          "status",
+          "is_isolation",
+          "has_ventilator",
+          "has_telemetry",
+          "current_patient_id",
+          "current_encounter_id"
+        ],
+        "title": "BedResponse"
+      },
+      "DeclareEmergencyRequest": {
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "title": "Event Type",
+            "example": "MASS_CASUALTY"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity",
+            "default": "HIGH",
+            "example": "CRITICAL"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "example": "Major highway multivehicle collision; expecting 8 critical trauma arrivals"
+          },
+          "affected_departments": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Affected Departments"
+          },
+          "expected_patient_surge": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Expected Patient Surge",
+            "default": 8
+          },
+          "declared_by": {
+            "type": "string",
+            "title": "Declared By",
+            "default": "ADM-001"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_type",
+          "description"
+        ],
+        "title": "DeclareEmergencyRequest"
+      },
+      "DepartmentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "total_beds": {
+            "type": "integer",
+            "title": "Total Beds"
+          },
+          "current_occupancy": {
+            "type": "integer",
+            "title": "Current Occupancy"
+          },
+          "min_doctors": {
+            "type": "integer",
+            "title": "Min Doctors"
+          },
+          "min_nurses": {
+            "type": "integer",
+            "title": "Min Nurses"
+          },
+          "nurse_patient_ratio": {
+            "type": "string",
+            "title": "Nurse Patient Ratio"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "code",
+          "total_beds",
+          "current_occupancy",
+          "min_doctors",
+          "min_nurses",
+          "nurse_patient_ratio"
+        ],
+        "title": "DepartmentResponse"
+      },
+      "DiseaseCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "example": "Acute Viral Myocarditis"
+          },
+          "icd_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icd Code",
+            "example": "I40.9"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "default": "Cardiovascular",
+            "example": "Cardiovascular"
+          },
+          "is_communicable": {
+            "type": "boolean",
+            "title": "Is Communicable",
+            "default": false
+          },
+          "requires_isolation": {
+            "type": "boolean",
+            "title": "Requires Isolation",
+            "default": false
+          },
+          "added_by": {
+            "type": "string",
+            "title": "Added By",
+            "default": "REC-001"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "DiseaseCreate"
+      },
+      "DiseaseResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "example": "Acute Viral Myocarditis"
+          },
+          "icd_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icd Code",
+            "example": "I40.9"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "default": "Cardiovascular",
+            "example": "Cardiovascular"
+          },
+          "is_communicable": {
+            "type": "boolean",
+            "title": "Is Communicable",
+            "default": false
+          },
+          "requires_isolation": {
+            "type": "boolean",
+            "title": "Requires Isolation",
+            "default": false
+          },
+          "added_by": {
+            "type": "string",
+            "title": "Added By",
+            "default": "REC-001"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "id"
+        ],
+        "title": "DiseaseResponse"
+      },
+      "EmergencyResponse": {
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "title": "Event Type",
+            "example": "MASS_CASUALTY"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity",
+            "default": "HIGH",
+            "example": "CRITICAL"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "example": "Major highway multivehicle collision; expecting 8 critical trauma arrivals"
+          },
+          "affected_departments": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Affected Departments"
+          },
+          "expected_patient_surge": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Expected Patient Surge",
+            "default": 8
+          },
+          "declared_by": {
+            "type": "string",
+            "title": "Declared By",
+            "default": "ADM-001"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "declared_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Declared At"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_type",
+          "description",
+          "id",
+          "status",
+          "declared_at",
+          "resolved_at"
+        ],
+        "title": "EmergencyResponse"
+      },
+      "EncounterCreate": {
+        "properties": {
+          "patient_id": {
+            "type": "string",
+            "title": "Patient Id",
+            "example": "PAT-0001"
+          },
+          "chief_complaint": {
+            "type": "string",
+            "title": "Chief Complaint",
+            "example": "Severe crushing chest pain radiating to left arm with diaphoresis"
+          },
+          "encounter_type": {
+            "type": "string",
+            "title": "Encounter Type",
+            "default": "EMERGENCY"
+          },
+          "current_department_id": {
+            "type": "string",
+            "title": "Current Department Id",
+            "default": "DEP-ER"
+          },
+          "heart_rate": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 250.0,
+                "minimum": 30.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heart Rate",
+            "example": 115
+          },
+          "bp_systolic": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 300.0,
+                "minimum": 50.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bp Systolic",
+            "example": 145
+          },
+          "bp_diastolic": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 200.0,
+                "minimum": 20.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bp Diastolic",
+            "example": 95
+          },
+          "spo2": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 50.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spo2",
+            "example": 88
+          },
+          "temperature_f": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 110.0,
+                "minimum": 90.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature F",
+            "example": 99.2
+          },
+          "pain_level": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pain Level",
+            "example": 9
+          },
+          "respiratory_rate": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 60.0,
+                "minimum": 5.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Respiratory Rate",
+            "example": 24
+          },
+          "gcs_score": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 15.0,
+                "minimum": 3.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gcs Score",
+            "example": 14
+          }
+        },
+        "type": "object",
+        "required": [
+          "patient_id",
+          "chief_complaint"
+        ],
+        "title": "EncounterCreate"
+      },
+      "EncounterResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "patient_id": {
+            "type": "string",
+            "title": "Patient Id"
+          },
+          "encounter_type": {
+            "type": "string",
+            "title": "Encounter Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "current_department_id": {
+            "type": "string",
+            "title": "Current Department Id"
+          },
+          "current_bed_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Bed Id"
+          },
+          "assigned_doctor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Doctor Id"
+          },
+          "assigned_nurse_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Nurse Id"
+          },
+          "esi_level": {
+            "type": "integer",
+            "title": "Esi Level"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          },
+          "patient_status": {
+            "type": "string",
+            "title": "Patient Status"
+          },
+          "chief_complaint": {
+            "type": "string",
+            "title": "Chief Complaint"
+          },
+          "heart_rate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heart Rate"
+          },
+          "bp_systolic": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bp Systolic"
+          },
+          "bp_diastolic": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bp Diastolic"
+          },
+          "spo2": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spo2"
+          },
+          "temperature_f": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature F"
+          },
+          "pain_level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pain Level"
+          },
+          "arrival_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Arrival Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "patient_id",
+          "encounter_type",
+          "status",
+          "current_department_id",
+          "current_bed_id",
+          "assigned_doctor_id",
+          "assigned_nurse_id",
+          "esi_level",
+          "priority",
+          "patient_status",
+          "chief_complaint",
+          "heart_rate",
+          "bp_systolic",
+          "bp_diastolic",
+          "spo2",
+          "temperature_f",
+          "pain_level",
+          "arrival_time"
+        ],
+        "title": "EncounterResponse"
+      },
+      "EquipmentBookingCreate": {
+        "properties": {
+          "equipment_id": {
+            "type": "string",
+            "title": "Equipment Id",
+            "example": "RES-CT-01"
+          },
+          "encounter_id": {
+            "type": "string",
+            "title": "Encounter Id",
+            "example": "ENC-0001"
+          },
+          "patient_id": {
+            "type": "string",
+            "title": "Patient Id",
+            "example": "PAT-0001"
+          },
+          "requested_by": {
+            "type": "string",
+            "title": "Requested By",
+            "default": "DOC-001"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes",
+            "example": "CT Chest with contrast for suspected PE"
+          }
+        },
+        "type": "object",
+        "required": [
+          "equipment_id",
+          "encounter_id",
+          "patient_id"
+        ],
+        "title": "EquipmentBookingCreate"
+      },
+      "EquipmentBookingResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "equipment_id": {
+            "type": "string",
+            "title": "Equipment Id"
+          },
+          "encounter_id": {
+            "type": "string",
+            "title": "Encounter Id"
+          },
+          "patient_id": {
+            "type": "string",
+            "title": "Patient Id"
+          },
+          "requested_by": {
+            "type": "string",
+            "title": "Requested By"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Time"
+          },
+          "end_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "equipment_id",
+          "encounter_id",
+          "patient_id",
+          "requested_by",
+          "start_time",
+          "end_time",
+          "status",
+          "notes"
+        ],
+        "title": "EquipmentBookingResponse"
+      },
+      "EquipmentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "resource_type": {
+            "type": "string",
+            "title": "Resource Type"
+          },
+          "department_id": {
+            "type": "string",
+            "title": "Department Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "slot_duration_mins": {
+            "type": "integer",
+            "title": "Slot Duration Mins"
+          },
+          "current_patient_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Patient Id"
+          },
+          "current_encounter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Encounter Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "resource_type",
+          "department_id",
+          "status",
+          "slot_duration_mins",
+          "current_patient_id",
+          "current_encounter_id",
+          "created_at"
+        ],
+        "title": "EquipmentResponse"
+      },
+      "EquipmentStatusUpdate": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "example": "MAINTENANCE"
+          },
+          "changed_by": {
+            "type": "string",
+            "title": "Changed By",
+            "default": "TECH-001"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": "Scheduled maintenance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "EquipmentStatusUpdate"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "LoginJSONRequest": {
+        "properties": {
+          "staff_id": {
+            "type": "string",
+            "title": "Staff Id",
+            "example": "DOC-001"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password",
+            "example": "hospital@123"
+          }
+        },
+        "type": "object",
+        "required": [
+          "staff_id",
+          "password"
+        ],
+        "title": "LoginJSONRequest"
+      },
+      "ManualBedBookRequest": {
+        "properties": {
+          "patient_id": {
+            "type": "string",
+            "title": "Patient Id",
+            "example": "PAT-0001"
+          },
+          "encounter_id": {
+            "type": "string",
+            "title": "Encounter Id",
+            "example": "ENC-0001"
+          },
+          "bed_id": {
+            "type": "string",
+            "title": "Bed Id",
+            "example": "BED-ICU-07"
+          },
+          "staff_id": {
+            "type": "string",
+            "title": "Staff Id",
+            "default": "REC-001"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "example": "Direct clinician assignment due to urgent ICU need"
+          }
+        },
+        "type": "object",
+        "required": [
+          "patient_id",
+          "encounter_id",
+          "bed_id",
+          "reason"
+        ],
+        "title": "ManualBedBookRequest"
+      },
+      "PatientCreate": {
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "title": "First Name",
+            "example": "Rajesh"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name",
+            "example": "Kumar"
+          },
+          "age": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 0.0,
+            "title": "Age",
+            "example": 55
+          },
+          "gender": {
+            "type": "string",
+            "title": "Gender",
+            "example": "M"
+          },
+          "blood_group": {
+            "type": "string",
+            "title": "Blood Group",
+            "example": "O+"
+          },
+          "contact_phone": {
+            "type": "string",
+            "title": "Contact Phone",
+            "example": "+919876543210"
+          },
+          "emergency_contact": {
+            "type": "string",
+            "title": "Emergency Contact",
+            "example": "+919876543211"
+          },
+          "allergies": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allergies"
+          },
+          "chronic_conditions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chronic Conditions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "first_name",
+          "last_name",
+          "age",
+          "gender",
+          "blood_group",
+          "contact_phone",
+          "emergency_contact"
+        ],
+        "title": "PatientCreate"
+      },
+      "PatientResponse": {
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "title": "First Name",
+            "example": "Rajesh"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name",
+            "example": "Kumar"
+          },
+          "age": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 0.0,
+            "title": "Age",
+            "example": 55
+          },
+          "gender": {
+            "type": "string",
+            "title": "Gender",
+            "example": "M"
+          },
+          "blood_group": {
+            "type": "string",
+            "title": "Blood Group",
+            "example": "O+"
+          },
+          "contact_phone": {
+            "type": "string",
+            "title": "Contact Phone",
+            "example": "+919876543210"
+          },
+          "emergency_contact": {
+            "type": "string",
+            "title": "Emergency Contact",
+            "example": "+919876543211"
+          },
+          "allergies": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allergies"
+          },
+          "chronic_conditions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chronic Conditions"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "first_name",
+          "last_name",
+          "age",
+          "gender",
+          "blood_group",
+          "contact_phone",
+          "emergency_contact",
+          "id",
+          "created_at"
+        ],
+        "title": "PatientResponse"
+      },
+      "PredictionRecordRequest": {
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "title": "Model Name",
+            "example": "SurgeForecaster_v1"
+          },
+          "model_version": {
+            "type": "string",
+            "title": "Model Version",
+            "default": "1.0.0"
+          },
+          "prediction_type": {
+            "type": "string",
+            "title": "Prediction Type",
+            "example": "SURGE_FORECAST"
+          },
+          "input_features": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Input Features"
+          },
+          "prediction_output": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Prediction Output"
+          },
+          "confidence_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence Score",
+            "example": 0.89
+          },
+          "inference_time_ms": {
+            "type": "number",
+            "title": "Inference Time Ms",
+            "example": 12.4
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_name",
+          "prediction_type",
+          "confidence_score",
+          "inference_time_ms"
+        ],
+        "title": "PredictionRecordRequest"
+      },
+      "PredictionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "model_version": {
+            "type": "string",
+            "title": "Model Version"
+          },
+          "prediction_type": {
+            "type": "string",
+            "title": "Prediction Type"
+          },
+          "input_features": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Input Features"
+          },
+          "prediction_output": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Prediction Output"
+          },
+          "confidence_score": {
+            "type": "number",
+            "title": "Confidence Score"
+          },
+          "inference_time_ms": {
+            "type": "number",
+            "title": "Inference Time Ms"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "model_name",
+          "model_version",
+          "prediction_type",
+          "input_features",
+          "prediction_output",
+          "confidence_score",
+          "inference_time_ms",
+          "target_date",
+          "created_at"
+        ],
+        "title": "PredictionResponse"
+      },
+      "QueueResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "department_id": {
+            "type": "string",
+            "title": "Department Id"
+          },
+          "current_depth": {
+            "type": "integer",
+            "title": "Current Depth"
+          },
+          "average_wait_time_minutes": {
+            "type": "number",
+            "title": "Average Wait Time Minutes"
+          },
+          "max_capacity": {
+            "type": "integer",
+            "title": "Max Capacity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "department_id",
+          "current_depth",
+          "average_wait_time_minutes",
+          "max_capacity"
+        ],
+        "title": "QueueResponse"
+      },
+      "StaffMeResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "department_id": {
+            "type": "string",
+            "title": "Department Id"
+          },
+          "specialization": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specialization"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "current_workload": {
+            "type": "integer",
+            "title": "Current Workload"
+          },
+          "max_workload": {
+            "type": "integer",
+            "title": "Max Workload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "first_name",
+          "last_name",
+          "role",
+          "department_id",
+          "specialization",
+          "status",
+          "current_workload",
+          "max_workload"
+        ],
+        "title": "StaffMeResponse"
+      },
+      "StaffRegisterRequest": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "example": "DOC-009"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name",
+            "example": "Aarav"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name",
+            "example": "Mehta"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "example": "DOCTOR"
+          },
+          "department_id": {
+            "type": "string",
+            "title": "Department Id",
+            "example": "DEP-ER"
+          },
+          "specialization": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specialization",
+            "example": "Trauma Surgery"
+          },
+          "max_workload": {
+            "type": "integer",
+            "title": "Max Workload",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "first_name",
+          "last_name",
+          "role",
+          "department_id"
+        ],
+        "title": "StaffRegisterRequest"
+      },
+      "StaffResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "department_id": {
+            "type": "string",
+            "title": "Department Id"
+          },
+          "specialization": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specialization"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "current_workload": {
+            "type": "integer",
+            "title": "Current Workload"
+          },
+          "max_workload": {
+            "type": "integer",
+            "title": "Max Workload"
+          },
+          "skills": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skills"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "first_name",
+          "last_name",
+          "role",
+          "department_id",
+          "specialization",
+          "status",
+          "current_workload",
+          "max_workload",
+          "skills",
+          "created_at"
+        ],
+        "title": "StaffResponse"
+      },
+      "StaffShiftCreate": {
+        "properties": {
+          "staff_id": {
+            "type": "string",
+            "title": "Staff Id"
+          },
+          "department_id": {
+            "type": "string",
+            "title": "Department Id"
+          },
+          "shift_type": {
+            "type": "string",
+            "title": "Shift Type",
+            "example": "MORNING"
+          },
+          "start_time": {
+            "type": "string",
+            "title": "Start Time",
+            "default": "06:00"
+          },
+          "end_time": {
+            "type": "string",
+            "title": "End Time",
+            "default": "14:00"
+          }
+        },
+        "type": "object",
+        "required": [
+          "staff_id",
+          "department_id",
+          "shift_type"
+        ],
+        "title": "StaffShiftCreate"
+      },
+      "StaffShiftResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "staff_id": {
+            "type": "string",
+            "title": "Staff Id"
+          },
+          "department_id": {
+            "type": "string",
+            "title": "Department Id"
+          },
+          "shift_type": {
+            "type": "string",
+            "title": "Shift Type"
+          },
+          "start_time": {
+            "type": "string",
+            "title": "Start Time"
+          },
+          "end_time": {
+            "type": "string",
+            "title": "End Time"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "staff_id",
+          "department_id",
+          "shift_type",
+          "start_time",
+          "end_time",
+          "status"
+        ],
+        "title": "StaffShiftResponse"
+      },
+      "StaffSkillCreate": {
+        "properties": {
+          "staff_id": {
+            "type": "string",
+            "title": "Staff Id"
+          },
+          "skill_name": {
+            "type": "string",
+            "title": "Skill Name",
+            "example": "ICU_CERTIFIED"
+          }
+        },
+        "type": "object",
+        "required": [
+          "staff_id",
+          "skill_name"
+        ],
+        "title": "StaffSkillCreate"
+      },
+      "StaffSkillResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "staff_id": {
+            "type": "string",
+            "title": "Staff Id"
+          },
+          "skill_name": {
+            "type": "string",
+            "title": "Skill Name"
+          },
+          "certification_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Certification Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "staff_id",
+          "skill_name",
+          "certification_date"
+        ],
+        "title": "StaffSkillResponse"
+      },
+      "StaffStatusUpdate": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "example": "BUSY"
+          },
+          "changed_by": {
+            "type": "string",
+            "title": "Changed By",
+            "default": "ADM-001"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": "Manual status update"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "StaffStatusUpdate"
+      },
+      "StepAdvanceRequest": {
+        "properties": {
+          "performed_by": {
+            "type": "string",
+            "title": "Performed By",
+            "default": "DOC-001"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes",
+            "example": "ESI triage completed, vital signs stable"
+          }
+        },
+        "type": "object",
+        "title": "StepAdvanceRequest"
+      },
+      "TaskResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "encounter_id": {
+            "type": "string",
+            "title": "Encounter Id"
+          },
+          "task_type": {
+            "type": "string",
+            "title": "Task Type"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "assigned_to_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned To Id"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "due_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "encounter_id",
+          "task_type",
+          "description",
+          "assigned_to_id",
+          "priority",
+          "status",
+          "due_time",
+          "created_at"
+        ],
+        "title": "TaskResponse"
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "staff_id": {
+            "type": "string",
+            "title": "Staff Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "department_id": {
+            "type": "string",
+            "title": "Department Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "staff_id",
+          "name",
+          "role",
+          "department_id"
+        ],
+        "title": "TokenResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WorkflowDefinitionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "steps_json": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Steps Json"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category",
+          "steps_json",
+          "created_at"
+        ],
+        "title": "WorkflowDefinitionResponse"
+      },
+      "WorkflowInstanceCreate": {
+        "properties": {
+          "workflow_definition_id": {
+            "type": "string",
+            "title": "Workflow Definition Id",
+            "example": "WFD-EMERGENCY-ADMISSION"
+          },
+          "encounter_id": {
+            "type": "string",
+            "title": "Encounter Id",
+            "example": "ENC-0001"
+          },
+          "patient_id": {
+            "type": "string",
+            "title": "Patient Id",
+            "example": "PAT-0001"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_definition_id",
+          "encounter_id",
+          "patient_id"
+        ],
+        "title": "WorkflowInstanceCreate"
+      },
+      "WorkflowInstanceResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "workflow_definition_id": {
+            "type": "string",
+            "title": "Workflow Definition Id"
+          },
+          "encounter_id": {
+            "type": "string",
+            "title": "Encounter Id"
+          },
+          "patient_id": {
+            "type": "string",
+            "title": "Patient Id"
+          },
+          "current_step_number": {
+            "type": "integer",
+            "title": "Current Step Number"
+          },
+          "current_step_name": {
+            "type": "string",
+            "title": "Current Step Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "sla_breached": {
+            "type": "boolean",
+            "title": "Sla Breached"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "workflow_definition_id",
+          "encounter_id",
+          "patient_id",
+          "current_step_number",
+          "current_step_name",
+          "status",
+          "started_at",
+          "completed_at",
+          "sla_breached"
+        ],
+        "title": "WorkflowInstanceResponse"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/api/v1/auth/login"
+          }
+        }
+      }
+    }
+  }
+}
