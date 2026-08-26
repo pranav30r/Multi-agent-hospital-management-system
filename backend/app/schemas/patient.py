@@ -24,7 +24,7 @@ class EncounterCreate(BaseModel):
     patient_id: str = Field(..., example="PAT-0001")
     chief_complaint: str = Field(..., example="Severe crushing chest pain radiating to left arm with diaphoresis")
     encounter_type: str = Field(default="EMERGENCY")
-    current_department_id: str = Field(default="DEP-ER")
+    current_department_id: Optional[str] = None
     
     # Optional Intake Vitals
     heart_rate: Optional[int] = Field(None, ge=30, le=250, example=115)

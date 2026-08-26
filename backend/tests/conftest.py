@@ -9,14 +9,11 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from pathlib import Path
+from sqlalchemy import text
 from app.database import Base, get_db
 from app.main import app
-from app.seed_data import (
-    DEPARTMENTS_DATA, BEDS_DATA, STAFF_DATA, EQUIPMENT_DATA,
-    DISEASES_DATA, WORKFLOW_DEFINITIONS_DATA
-)
-from app.models import Department, Bed, Staff, Equipment, Disease, WorkflowDefinition
-from app.auth.security import get_password_hash, create_access_token
+from app.auth.security import create_access_token
 
 # In-memory SQLite async database for isolated fast test runs
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -32,6 +29,14 @@ TestingSessionLocal = async_sessionmaker(
     expire_on_commit=False
 )
 
+DATABASE_DIR = Path(__file__).resolve().parent.parent.parent / "database"
+SEED_SQL_FILES = [
+    "02_seed_infrastructure.sql",
+    "03_seed_clinical.sql",
+    "04_seed_workflows.sql",
+    "05_seed_operational.sql"
+]
+
 
 @pytest_asyncio.fixture(scope="session")
 def event_loop():
@@ -43,35 +48,26 @@ def event_loop():
 
 @pytest_asyncio.fixture(scope="function")
 async def test_db():
-    """Initializes schema and seeds fresh synthetic data for each test run."""
+    """Initializes schema and seeds fresh synthetic data from database seed files for each test run."""
+    def seed_sync(sync_conn):
+        for seed_file in SEED_SQL_FILES:
+            file_path = DATABASE_DIR / seed_file
+            if file_path.exists():
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read().replace("::jsonb", "")
+                try:
+                    # SQLite DBAPI executescript executes entire multi-statement SQL natively
+                    sync_conn.connection.dbapi_connection.executescript(content)
+                except Exception as e:
+                    # Fallback to standard execution if driver wrapper differs
+                    for statement in content.split(";"):
+                        stmt = statement.strip()
+                        if stmt:
+                            sync_conn.exec_driver_sql(stmt)
+
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
-    default_pwd_hash = get_password_hash("hospital@123")
-
-    # Seed data
-    async with TestingSessionLocal() as session:
-        # Departments
-        for d in DEPARTMENTS_DATA:
-            session.add(Department(**d))
-        # Beds
-        for b in BEDS_DATA:
-            session.add(Bed(**b, status="AVAILABLE"))
-        # Staff (with true bcrypt password hash)
-        for s in STAFF_DATA:
-            staff_data = {**s, "password_hash": default_pwd_hash, "status": "AVAILABLE", "current_workload": 0}
-            session.add(Staff(**staff_data))
-        # Equipment
-        for e in EQUIPMENT_DATA:
-            session.add(Equipment(**e, status="AVAILABLE"))
-        # Diseases
-        for dis in DISEASES_DATA:
-            session.add(Disease(**dis))
-        # Workflows
-        for wfd in WORKFLOW_DEFINITIONS_DATA:
-            session.add(WorkflowDefinition(**wfd))
-
-        await session.commit()
+        await conn.run_sync(seed_sync)
 
     yield TestingSessionLocal
 

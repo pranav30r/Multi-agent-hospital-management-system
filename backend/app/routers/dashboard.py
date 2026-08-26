@@ -32,13 +32,17 @@ async def get_hospital_state(db: AsyncSession = Depends(get_db)):
     for b in all_beds:
         bed_counts[b.status] = bed_counts.get(b.status, 0) + 1
 
+    # Dynamic Department ID resolution from database
+    icu_dept_ids = {d.id for d in departments if d.code == "ICU"}
+    er_dept_ids = {d.id for d in departments if d.code == "ER"}
+
     # ICU specific
-    icu_beds = [b for b in all_beds if b.department_id == "DEP-ICU"]
+    icu_beds = [b for b in all_beds if b.department_id in icu_dept_ids or b.bed_type == "ICU"]
     icu_occupied = sum(1 for b in icu_beds if b.status in ("OCCUPIED", "RESERVED"))
     icu_total = len(icu_beds)
 
     # ER specific
-    er_beds = [b for b in all_beds if b.department_id == "DEP-ER"]
+    er_beds = [b for b in all_beds if b.department_id in er_dept_ids or b.bed_type == "EMERGENCY"]
     er_occupied = sum(1 for b in er_beds if b.status in ("OCCUPIED", "RESERVED"))
 
     # Staff counts by status
@@ -96,7 +100,7 @@ async def get_hospital_state(db: AsyncSession = Depends(get_db)):
         "er": {
             "beds_occupied": er_occupied,
             "beds_total": len(er_beds),
-            "active_patients": sum(1 for e in active_encounters if e.current_department_id == "DEP-ER"),
+            "active_patients": sum(1 for e in active_encounters if e.current_department_id in er_dept_ids),
         },
 
         "staff": {

@@ -1,6 +1,7 @@
 -- ============================================================================
--- MULTI-AGENT HOSPITAL MANAGEMENT SYSTEM - INDEXES & ANALYTIC VIEWS
--- Optimizes high-throughput clinical queries and real-time dashboard state
+-- 06_indexes_and_views.sql
+-- Performance Indexes & Real-Time Analytical Views
+-- Target Engine: PostgreSQL 15+ / ACID Relational SQL
 -- ============================================================================
 
 -- 1. PERFORMANCE B-TREE INDEXES

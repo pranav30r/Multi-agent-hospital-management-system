@@ -20,7 +20,7 @@ class EquipmentBookingCreate(BaseModel):
     equipment_id: str
     encounter_id: str
     patient_id: str
-    requested_by: str = "DOC-001"
+    requested_by: Optional[str] = None
     notes: Optional[str] = None
 
 class EquipmentBookingResponse(BaseModel):

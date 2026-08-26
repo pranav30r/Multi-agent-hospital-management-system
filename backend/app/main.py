@@ -4,7 +4,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db
-from app.seed_data import seed_database
 
 # Configure logging
 logging.basicConfig(
@@ -18,8 +17,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan context manager handling startup & shutdown."""
     logger.info("Initializing Hospital Command Center Backend...")
     await init_db()
-    await seed_database()
-    logger.info("Database & Synthetic Seed Data initialized.")
+    logger.info("Database connection established.")
     yield
     logger.info("Shutting down Hospital Command Center Backend...")
 

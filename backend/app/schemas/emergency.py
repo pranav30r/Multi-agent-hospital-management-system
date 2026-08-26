@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 class EmergencyDeclareRequest(BaseModel):
     name: str = Field(..., example="Mass Casualty Incident - Highway Accident")
     emergency_type: str = Field(..., example="MASS_CASUALTY")
-    declared_by: str = Field(default="ADM-001")
-    affected_departments: List[str] = Field(default=["DEP-ER", "DEP-ICU", "DEP-SUR"])
+    declared_by: Optional[str] = None
+    affected_departments: List[str] = Field(default_factory=list)
     notes: Optional[str] = None
 
 class EmergencyResponse(BaseModel):
@@ -44,6 +44,6 @@ class ApprovalItemResponse(BaseModel):
 
 class ApprovalReviewRequest(BaseModel):
     action: str = Field(..., example="APPROVE")  # APPROVE, MODIFY, REJECT
-    reviewed_by: str = Field(default="DOC-001")
+    reviewed_by: Optional[str] = None
     modified_payload: Optional[Dict[str, Any]] = None
     notes: Optional[str] = None
