@@ -43,13 +43,21 @@ app.add_middleware(
 
 # Import Routers
 from app.routers import patients, beds, diseases, emergencies, approvals
+from app.routers import staff, equipment, audit, dashboard, events
 
-# Include Routers under API V1 Prefix
+# Include REST Routers under API V1 Prefix
 app.include_router(patients.router, prefix=settings.API_V1_STR)
 app.include_router(beds.router, prefix=settings.API_V1_STR)
 app.include_router(diseases.router, prefix=settings.API_V1_STR)
 app.include_router(emergencies.router, prefix=settings.API_V1_STR)
 app.include_router(approvals.router, prefix=settings.API_V1_STR)
+app.include_router(staff.router, prefix=settings.API_V1_STR)
+app.include_router(equipment.router, prefix=settings.API_V1_STR)
+app.include_router(audit.router, prefix=settings.API_V1_STR)
+app.include_router(dashboard.router, prefix=settings.API_V1_STR)
+
+# Include WebSocket Router (no API prefix — connects at /ws/events)
+app.include_router(events.router)
 
 @app.get("/", tags=["System"])
 async def root():

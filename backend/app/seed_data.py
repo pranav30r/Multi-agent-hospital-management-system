@@ -85,21 +85,57 @@ EQUIPMENT_DATA = [
 ]
 
 DISEASES_DATA = [
+    # Cardiovascular (7)
     {"name": "Hypertension", "icd_code": "I10", "category": "Cardiovascular", "is_communicable": False, "requires_isolation": False},
-    {"name": "Type 2 Diabetes Mellitus", "icd_code": "E11", "category": "Endocrine", "is_communicable": False, "requires_isolation": False},
     {"name": "Acute Myocardial Infarction", "icd_code": "I21", "category": "Cardiovascular", "is_communicable": False, "requires_isolation": False},
+    {"name": "Congestive Heart Failure", "icd_code": "I50", "category": "Cardiovascular", "is_communicable": False, "requires_isolation": False},
+    {"name": "Atrial Fibrillation", "icd_code": "I48", "category": "Cardiovascular", "is_communicable": False, "requires_isolation": False},
+    {"name": "Deep Vein Thrombosis", "icd_code": "I82", "category": "Cardiovascular", "is_communicable": False, "requires_isolation": False},
+    {"name": "Pulmonary Embolism", "icd_code": "I26", "category": "Cardiovascular", "is_communicable": False, "requires_isolation": False},
+    {"name": "Aortic Aneurysm", "icd_code": "I71", "category": "Cardiovascular", "is_communicable": False, "requires_isolation": False},
+    # Respiratory (5)
     {"name": "Asthma Exacerbation", "icd_code": "J45", "category": "Respiratory", "is_communicable": False, "requires_isolation": False},
     {"name": "COPD Exacerbation", "icd_code": "J44", "category": "Respiratory", "is_communicable": False, "requires_isolation": False},
     {"name": "Bacterial Pneumonia", "icd_code": "J18", "category": "Respiratory", "is_communicable": True, "requires_isolation": False},
+    {"name": "Acute Bronchitis", "icd_code": "J20", "category": "Respiratory", "is_communicable": True, "requires_isolation": False},
+    {"name": "Chronic Sinusitis", "icd_code": "J32", "category": "Respiratory", "is_communicable": False, "requires_isolation": False},
+    # Infectious (8)
     {"name": "COVID-19 Infection", "icd_code": "U07.1", "category": "Infectious", "is_communicable": True, "requires_isolation": True},
     {"name": "Pulmonary Tuberculosis", "icd_code": "A15", "category": "Infectious", "is_communicable": True, "requires_isolation": True},
-    {"name": "Acute Appendicitis", "icd_code": "K35", "category": "Gastrointestinal", "is_communicable": False, "requires_isolation": False},
-    {"name": "Severe Sepsis", "icd_code": "R65.2", "category": "Critical Care", "is_communicable": False, "requires_isolation": False},
-    {"name": "Ischemic Stroke", "icd_code": "I63", "category": "Neurology", "is_communicable": False, "requires_isolation": False},
-    {"name": "Femur Fracture", "icd_code": "S72", "category": "Orthopedics", "is_communicable": False, "requires_isolation": False},
-    {"name": "Congestive Heart Failure", "icd_code": "I50", "category": "Cardiovascular", "is_communicable": False, "requires_isolation": False},
     {"name": "Dengue Fever", "icd_code": "A90", "category": "Infectious", "is_communicable": True, "requires_isolation": False},
+    {"name": "Malaria", "icd_code": "B50", "category": "Infectious", "is_communicable": True, "requires_isolation": False},
+    {"name": "Hepatitis B", "icd_code": "B16", "category": "Infectious", "is_communicable": True, "requires_isolation": False},
+    {"name": "HIV/AIDS", "icd_code": "B20", "category": "Infectious", "is_communicable": True, "requires_isolation": False},
+    {"name": "Bacterial Meningitis", "icd_code": "G00", "category": "Infectious", "is_communicable": True, "requires_isolation": True},
+    {"name": "Acute Tonsillitis", "icd_code": "J03", "category": "Infectious", "is_communicable": True, "requires_isolation": False},
+    # Endocrine (2)
+    {"name": "Type 2 Diabetes Mellitus", "icd_code": "E11", "category": "Endocrine", "is_communicable": False, "requires_isolation": False},
+    {"name": "Diabetic Ketoacidosis", "icd_code": "E10.1", "category": "Endocrine", "is_communicable": False, "requires_isolation": False},
+    # Gastrointestinal (4)
+    {"name": "Acute Appendicitis", "icd_code": "K35", "category": "Gastrointestinal", "is_communicable": False, "requires_isolation": False},
+    {"name": "Acute Pancreatitis", "icd_code": "K85", "category": "Gastrointestinal", "is_communicable": False, "requires_isolation": False},
+    {"name": "Liver Cirrhosis", "icd_code": "K74", "category": "Gastrointestinal", "is_communicable": False, "requires_isolation": False},
+    {"name": "Acute Gastroenteritis", "icd_code": "K52", "category": "Gastrointestinal", "is_communicable": True, "requires_isolation": False},
+    # Neurology (3)
+    {"name": "Ischemic Stroke", "icd_code": "I63", "category": "Neurology", "is_communicable": False, "requires_isolation": False},
+    {"name": "Epilepsy", "icd_code": "G40", "category": "Neurology", "is_communicable": False, "requires_isolation": False},
+    {"name": "Migraine", "icd_code": "G43", "category": "Neurology", "is_communicable": False, "requires_isolation": False},
+    # Nephrology (2)
     {"name": "Acute Kidney Injury", "icd_code": "N17", "category": "Nephrology", "is_communicable": False, "requires_isolation": False},
+    {"name": "Kidney Stone", "icd_code": "N20", "category": "Nephrology", "is_communicable": False, "requires_isolation": False},
+    # Orthopedics (2)
+    {"name": "Femur Fracture", "icd_code": "S72", "category": "Orthopedics", "is_communicable": False, "requires_isolation": False},
+    {"name": "Osteoarthritis", "icd_code": "M15", "category": "Orthopedics", "is_communicable": False, "requires_isolation": False},
+    # Critical Care (2)
+    {"name": "Severe Sepsis", "icd_code": "R65.2", "category": "Critical Care", "is_communicable": False, "requires_isolation": False},
+    {"name": "Multi-Organ Dysfunction", "icd_code": "R65.1", "category": "Critical Care", "is_communicable": False, "requires_isolation": False},
+    # Dermatology / Other (3)
+    {"name": "Cellulitis", "icd_code": "L03", "category": "Dermatology", "is_communicable": False, "requires_isolation": False},
+    {"name": "Urinary Tract Infection", "icd_code": "N39", "category": "Urology", "is_communicable": False, "requires_isolation": False},
+    {"name": "Depression", "icd_code": "F32", "category": "Psychiatry", "is_communicable": False, "requires_isolation": False},
+    # Burns / Trauma (2)
+    {"name": "Severe Burns", "icd_code": "T30", "category": "Trauma", "is_communicable": False, "requires_isolation": False},
+    {"name": "Anemia", "icd_code": "D64", "category": "Hematology", "is_communicable": False, "requires_isolation": False},
 ]
 
 WORKFLOW_DEFINITIONS_DATA = [
@@ -118,6 +154,33 @@ WORKFLOW_DEFINITIONS_DATA = [
             {"step_number": 8, "name": "Inpatient Admission", "expected_duration_min": 10, "required": True},
             {"step_number": 9, "name": "Discharge Planning", "expected_duration_min": 15, "required": True},
             {"step_number": 10, "name": "Final Discharge", "expected_duration_min": 10, "required": True},
+        ]
+    },
+    {
+        "id": "WFD-OPD-VISIT",
+        "name": "Outpatient (OPD) Visit Workflow",
+        "category": "OPD",
+        "steps_json": [
+            {"step_number": 1, "name": "Registration", "expected_duration_min": 5, "required": True},
+            {"step_number": 2, "name": "ESI Triage Assessment", "expected_duration_min": 10, "required": True},
+            {"step_number": 3, "name": "Doctor Assignment", "expected_duration_min": 5, "required": True},
+            {"step_number": 4, "name": "Doctor Examination", "expected_duration_min": 15, "required": True},
+            {"step_number": 5, "name": "Investigation (Optional)", "expected_duration_min": 20, "required": False},
+            {"step_number": 6, "name": "Diagnosis & Treatment Plan", "expected_duration_min": 10, "required": True},
+            {"step_number": 7, "name": "OPD Discharge", "expected_duration_min": 5, "required": True},
+        ]
+    },
+    {
+        "id": "WFD-TRANSFER",
+        "name": "Inter-Department Transfer Workflow",
+        "category": "TRANSFER",
+        "steps_json": [
+            {"step_number": 1, "name": "Transfer Request", "expected_duration_min": 5, "required": True},
+            {"step_number": 2, "name": "Destination Bed Search", "expected_duration_min": 5, "required": True},
+            {"step_number": 3, "name": "Transfer Approval", "expected_duration_min": 10, "required": True},
+            {"step_number": 4, "name": "Handoff Preparation", "expected_duration_min": 10, "required": True},
+            {"step_number": 5, "name": "Physical Transfer", "expected_duration_min": 15, "required": True},
+            {"step_number": 6, "name": "Receiving Handoff Confirmation", "expected_duration_min": 10, "required": True},
         ]
     }
 ]

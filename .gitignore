@@ -1,6 +1,48 @@
-node_modules/
-.env
-hospital.db
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Database (local dev only)
+*.db
+*.sqlite3
+
+# Environment variables
+.env
+.env.*
+
+# Docker
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Node (Person 3 frontend — not our scope)
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Byte-compiled
 *.pyc
-.pytest_cache/
