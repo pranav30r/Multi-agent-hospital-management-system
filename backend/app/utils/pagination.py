@@ -13,12 +13,16 @@ class PaginationParams:
         page: int = Query(1, ge=1, description="Page number (1-indexed)"),
         page_size: int = Query(20, ge=1, le=100, description="Items per page (max 100)"),
         sort_by: Optional[str] = Query(None, description="Field name to sort by"),
-        sort_order: str = Query("asc", regex="^(asc|desc)$", description="Sort order ('asc' or 'desc')")
+        sort_order: str = Query("asc", description="Sort order ('asc' or 'desc')")
     ):
-        self.page = page
-        self.page_size = page_size
-        self.sort_by = sort_by
-        self.sort_order = sort_order.lower()
+        raw_page = page.default if hasattr(page, "default") else page
+        self.page = int(raw_page or 1)
+        raw_page_size = page_size.default if hasattr(page_size, "default") else page_size
+        self.page_size = int(raw_page_size or 20)
+        raw_sort_by = sort_by.default if hasattr(sort_by, "default") else sort_by
+        self.sort_by = str(raw_sort_by) if raw_sort_by is not None else None
+        raw_order = sort_order.default if hasattr(sort_order, "default") else sort_order
+        self.sort_order = str(raw_order or "asc").lower()
 
     @property
     def offset(self) -> int:

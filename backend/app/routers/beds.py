@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Bed, BedAssignment, Department, Encounter, AuditLog
+from app.models import Bed, BedAssignment, Department, Encounter, AuditLog, Staff
+from app.auth.dependencies import require_roles
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Beds & Departments"])
@@ -16,8 +17,7 @@ class ManualBedBookRequest(BaseModel):
     patient_id: str = Field(..., example="PAT-0001")
     encounter_id: str = Field(..., example="ENC-0001")
     bed_id: str = Field(..., example="BED-ICU-07")
-    staff_id: str = Field(default="REC-001")
-    reason: str = Field(..., example="Direct clinician assignment due to urgent ICU need")
+    reason: str = Field(default="Direct clinician assignment due to urgent ICU need")
 
 class BedResponse(BaseModel):
     id: str
@@ -68,75 +68,92 @@ async def list_beds(
     return res.scalars().all()
 
 @router.post("/beds/book-manual", response_model=BedResponse)
-async def book_bed_manually(req: ManualBedBookRequest, db: AsyncSession = Depends(get_db)):
+async def book_bed_manually(
+    req: ManualBedBookRequest,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE", "RECEPTIONIST"])),
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Directly book a bed for a patient (Bypasses AI recommendation).
-    State transition: AVAILABLE -> RESERVED (NOT immediately OCCUPIED until patient physically arrives).
+    Directly book a bed for a patient with pessimistic row-level concurrency locking.
+    State transition: AVAILABLE -> RESERVED (Atomic, prevents race-condition double booking).
     """
-    res_bed = await db.execute(select(Bed).where(Bed.id == req.bed_id))
+    # 1. Pessimistic Row Lock on target Bed
+    res_bed = await db.execute(
+        select(Bed).where(Bed.id == req.bed_id).with_for_update()
+    )
     bed = res_bed.scalars().first()
     if not bed:
         raise HTTPException(status_code=404, detail="Bed not found")
     if bed.status != "AVAILABLE":
-        raise HTTPException(status_code=400, detail=f"Bed {req.bed_id} is in '{bed.status}' state and cannot be booked")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bed {req.bed_id} is in '{bed.status}' state and cannot be booked"
+        )
 
     res_enc = await db.execute(select(Encounter).where(Encounter.id == req.encounter_id))
     encounter = res_enc.scalars().first()
     if not encounter:
         raise HTTPException(status_code=404, detail="Encounter not found")
 
-    # Update bed state to RESERVED
+    # 2. Update bed state to RESERVED
     old_status = bed.status
     bed.status = "RESERVED"
     bed.current_patient_id = req.patient_id
     bed.current_encounter_id = req.encounter_id
 
-    # Update encounter
+    # 3. Update encounter
     encounter.current_bed_id = req.bed_id
     encounter.bed_reserved_time = datetime.utcnow()
     encounter.patient_status = "BED_RESERVED"
 
-    # Create BedAssignment record
+    # 4. Create BedAssignment record using authenticated staff identity
     assignment = BedAssignment(
         bed_id=req.bed_id,
         encounter_id=req.encounter_id,
         patient_id=req.patient_id,
-        assigned_by=req.staff_id,
+        assigned_by=current_staff.id,
         is_manual_override=True,
         status="RESERVED"
     )
     db.add(assignment)
 
-    # Log in Audit Trail
+    # 5. Log in Audit Trail using authenticated staff identity
     audit = AuditLog(
         entity_type="bed",
         entity_id=req.bed_id,
         field_changed="status",
         old_value=old_status,
         new_value="RESERVED",
-        changed_by=req.staff_id,
-        change_reason=f"Manual Bed Booking: {req.reason}"
+        changed_by=current_staff.id,
+        change_reason=f"Manual Bed Booking by {current_staff.role}: {req.reason}"
     )
     db.add(audit)
 
     await db.commit()
     await db.refresh(bed)
-    logger.info(f"Manual Bed Booking: Bed {req.bed_id} RESERVED for patient {req.patient_id} by {req.staff_id}")
+    logger.info(f"Manual Bed Booking: Bed {req.bed_id} RESERVED for patient {req.patient_id} by authenticated staff {current_staff.id}")
     return bed
 
 @router.post("/beds/{bed_id}/confirm-patient-in-bed", response_model=BedResponse)
-async def confirm_patient_in_bed(bed_id: str, staff_id: str = "NUR-001", db: AsyncSession = Depends(get_db)):
+async def confirm_patient_in_bed(
+    bed_id: str,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "NURSE", "CHARGE_NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Confirms physical arrival of patient at the bed.
+    Confirms physical arrival of patient at the bed with pessimistic locking.
     State transition: RESERVED -> OCCUPIED.
     """
-    res_bed = await db.execute(select(Bed).where(Bed.id == bed_id))
+    res_bed = await db.execute(
+        select(Bed).where(Bed.id == bed_id).with_for_update()
+    )
     bed = res_bed.scalars().first()
     if not bed:
         raise HTTPException(status_code=404, detail="Bed not found")
     if bed.status != "RESERVED":
         raise HTTPException(status_code=400, detail=f"Bed {bed_id} status is '{bed.status}', expected 'RESERVED'")
 
+    old_status = bed.status
     bed.status = "OCCUPIED"
 
     if bed.current_encounter_id:
@@ -150,14 +167,14 @@ async def confirm_patient_in_bed(bed_id: str, staff_id: str = "NUR-001", db: Asy
         entity_type="bed",
         entity_id=bed_id,
         field_changed="status",
-        old_value="RESERVED",
+        old_value=old_status,
         new_value="OCCUPIED",
-        changed_by=staff_id,
+        changed_by=current_staff.id,
         change_reason="Confirmed physical arrival of patient at bed"
     )
     db.add(audit)
 
     await db.commit()
     await db.refresh(bed)
-    logger.info(f"Physical arrival confirmed: Bed {bed_id} is now OCCUPIED")
+    logger.info(f"Physical arrival confirmed: Bed {bed_id} is now OCCUPIED by {current_staff.id}")
     return bed

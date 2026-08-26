@@ -39,6 +39,7 @@ class StaffRegisterRequest(BaseModel):
     role: str = Field(..., example="DOCTOR")
     department_id: str = Field(..., example="DEP-ER")
     specialization: Optional[str] = Field(None, example="Trauma Surgery")
+    password: str = Field(default="hospital@123", example="SecurePass123!")
     max_workload: int = Field(default=5)
 
 
@@ -61,22 +62,20 @@ class StaffMeResponse(BaseModel):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
-    form_data: Optional[OAuth2PasswordRequestForm] = Depends(None),
-    json_data: Optional[LoginJSONRequest] = None,
+    req: LoginJSONRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Authenticate hospital staff and generate a JWT bearer token.
-    Supports both Swagger UI form-urlencoded login and frontend JSON POST login.
-    Default password for all seeded staff accounts: 'hospital@123'.
+    Strictly verifies passwords against the stored cryptographic hash.
     """
-    staff_id = form_data.username if form_data else (json_data.staff_id if json_data else None)
-    password = form_data.password if form_data else (json_data.password if json_data else None)
+    staff_id = req.staff_id
+    password = req.password
 
     if not staff_id or not password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Staff ID / username and password are required"
+            detail="Staff ID and password are required"
         )
 
     from app.auth.lockout import is_account_locked, record_failed_login, reset_failed_login
@@ -91,9 +90,8 @@ async def login(
     result = await db.execute(select(Staff).where(Staff.id == staff_id.upper()))
     staff = result.scalars().first()
 
-    # Note: In our hospital simulation, if staff exists and password is the master default 'hospital@123',
-    # authenticate immediately to facilitate frictionless role simulation.
-    if not staff or password != "hospital@123":
+    # Strict cryptographic hash verification (No hardcoded bypass)
+    if not staff or not staff.password_hash or not verify_password(password, staff.password_hash):
         attempts_left = record_failed_login(staff_id.upper())
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -164,7 +162,8 @@ async def register_staff(
         specialization=req.specialization,
         status="AVAILABLE",
         current_workload=0,
-        max_workload=req.max_workload
+        max_workload=req.max_workload,
+        password_hash=get_password_hash(req.password)
     )
     db.add(new_staff)
 

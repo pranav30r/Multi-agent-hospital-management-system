@@ -13,6 +13,8 @@ from app.models.workflow import (
     Queue, Task, Admission, Transfer, Discharge
 )
 from app.models.agent import AuditLog
+from app.models.staff import Staff
+from app.auth.dependencies import require_roles
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/workflows", tags=["Clinical Workflows & Operations"])
@@ -25,7 +27,7 @@ class WorkflowDefinitionResponse(BaseModel):
     name: str
     category: str
     steps_json: List[Dict[str, Any]]
-    created_at: datetime
+    is_active: bool = True
 
     class Config:
         from_attributes = True
@@ -47,24 +49,21 @@ class WorkflowInstanceResponse(BaseModel):
     status: str
     started_at: datetime
     completed_at: Optional[datetime]
-    sla_breached: bool
 
     class Config:
         from_attributes = True
 
 
 class StepAdvanceRequest(BaseModel):
-    performed_by: str = Field(default="DOC-001")
     notes: Optional[str] = Field(None, example="ESI triage completed, vital signs stable")
 
 
 class QueueResponse(BaseModel):
     id: str
-    name: str
+    queue_type: str
     department_id: str
     current_depth: int
-    average_wait_time_minutes: float
-    max_capacity: int
+    estimated_wait_mins: float
 
     class Config:
         from_attributes = True
@@ -74,11 +73,8 @@ class TaskResponse(BaseModel):
     id: str
     encounter_id: str
     task_type: str
-    description: str
-    assigned_to_id: Optional[str]
     priority: int
     status: str
-    due_time: Optional[datetime]
     created_at: datetime
 
     class Config:
@@ -99,6 +95,7 @@ async def list_workflow_definitions(db: AsyncSession = Depends(get_db)):
 @router.post("/instances", response_model=WorkflowInstanceResponse, status_code=201)
 async def start_workflow_instance(
     req: WorkflowInstanceCreate,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "NURSE", "CHARGE_NURSE"])),
     db: AsyncSession = Depends(get_db)
 ):
     """Start an active clinical workflow instance for a patient encounter."""
@@ -114,21 +111,20 @@ async def start_workflow_instance(
     instance_id = f"WFI-{uuid.uuid4().hex[:6].upper()}"
     instance = WorkflowInstance(
         id=instance_id,
-        workflow_definition_id=req.workflow_definition_id,
+        definition_id=req.workflow_definition_id,
         encounter_id=req.encounter_id,
         patient_id=req.patient_id,
         current_step_number=1,
-        current_step_name=first_step_name,
-        status="IN_PROGRESS",
+        status="ACTIVE",
         started_at=datetime.utcnow()
     )
     db.add(instance)
 
     # Record initial step record
     step_record = WorkflowStep(
-        instance_id=instance_id,
+        workflow_instance_id=instance_id,
         step_number=1,
-        step_name=first_step_name,
+        name=first_step_name,
         status="IN_PROGRESS",
         started_at=datetime.utcnow()
     )
@@ -139,22 +135,32 @@ async def start_workflow_instance(
         entity_id=instance_id,
         field_changed="status",
         old_value=None,
-        new_value="IN_PROGRESS",
-        changed_by="WORKFLOW_ENGINE",
+        new_value="ACTIVE",
+        changed_by=current_staff.id,
         change_reason=f"Started workflow {wf_def.name} for encounter {req.encounter_id}"
     )
     db.add(audit)
 
     await db.commit()
     await db.refresh(instance)
-    logger.info(f"Workflow instance {instance.id} started for encounter {req.encounter_id}")
-    return instance
+    logger.info(f"Workflow instance {instance.id} started for encounter {req.encounter_id} by {current_staff.id}")
+    return {
+        "id": instance.id,
+        "workflow_definition_id": instance.definition_id,
+        "encounter_id": instance.encounter_id,
+        "patient_id": instance.patient_id,
+        "current_step_number": instance.current_step_number,
+        "current_step_name": first_step_name,
+        "status": instance.status,
+        "started_at": instance.started_at,
+        "completed_at": instance.completed_at
+    }
 
 
 @router.get("/instances", response_model=List[WorkflowInstanceResponse])
 async def list_workflow_instances(
     encounter_id: Optional[str] = Query(None),
-    status: Optional[str] = Query(None, description="IN_PROGRESS, COMPLETED, CANCELLED"),
+    status: Optional[str] = Query(None, description="ACTIVE, COMPLETED, CANCELLED"),
     db: AsyncSession = Depends(get_db)
 ):
     """List clinical workflow instances with optional filtering."""
@@ -164,7 +170,21 @@ async def list_workflow_instances(
     if status:
         query = query.where(WorkflowInstance.status == status.upper())
     result = await db.execute(query.order_by(desc(WorkflowInstance.started_at)))
-    return result.scalars().all()
+    instances = result.scalars().all()
+    out = []
+    for inst in instances:
+        out.append({
+            "id": inst.id,
+            "workflow_definition_id": inst.definition_id,
+            "encounter_id": inst.encounter_id,
+            "patient_id": inst.patient_id,
+            "current_step_number": inst.current_step_number,
+            "current_step_name": f"Step {inst.current_step_number}",
+            "status": inst.status,
+            "started_at": inst.started_at,
+            "completed_at": inst.completed_at
+        })
+    return out
 
 
 @router.get("/instances/{instance_id}", response_model=WorkflowInstanceResponse)
@@ -174,20 +194,33 @@ async def get_workflow_instance(instance_id: str, db: AsyncSession = Depends(get
     instance = result.scalars().first()
     if not instance:
         raise HTTPException(status_code=404, detail=f"Workflow instance {instance_id} not found")
-    return instance
+    return {
+        "id": instance.id,
+        "workflow_definition_id": instance.definition_id,
+        "encounter_id": instance.encounter_id,
+        "patient_id": instance.patient_id,
+        "current_step_number": instance.current_step_number,
+        "current_step_name": f"Step {instance.current_step_number}",
+        "status": instance.status,
+        "started_at": instance.started_at,
+        "completed_at": instance.completed_at
+    }
 
 
 @router.post("/instances/{instance_id}/advance", response_model=WorkflowInstanceResponse)
 async def advance_workflow_step(
     instance_id: str,
     req: StepAdvanceRequest,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "NURSE", "CHARGE_NURSE"])),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Advance a clinical workflow to the next step.
-    Updates historical step completion, checks adherence, and concludes the workflow when last step finishes.
+    Advance a clinical workflow to the next step with row-level locking.
+    Updates historical step completion and concludes the workflow when last step finishes.
     """
-    res = await db.execute(select(WorkflowInstance).where(WorkflowInstance.id == instance_id))
+    res = await db.execute(
+        select(WorkflowInstance).where(WorkflowInstance.id == instance_id).with_for_update()
+    )
     instance = res.scalars().first()
     if not instance:
         raise HTTPException(status_code=404, detail=f"Workflow instance {instance_id} not found")
@@ -195,7 +228,7 @@ async def advance_workflow_step(
         raise HTTPException(status_code=400, detail="Workflow instance already completed")
 
     def_result = await db.execute(
-        select(WorkflowDefinition).where(WorkflowDefinition.id == instance.workflow_definition_id)
+        select(WorkflowDefinition).where(WorkflowDefinition.id == instance.definition_id)
     )
     wf_def = def_result.scalars().first()
     total_steps = len(wf_def.steps_json) if wf_def and wf_def.steps_json else 1
@@ -203,28 +236,29 @@ async def advance_workflow_step(
     # Complete current step
     step_res = await db.execute(
         select(WorkflowStep).where(
-            WorkflowStep.instance_id == instance_id,
+            WorkflowStep.workflow_instance_id == instance_id,
             WorkflowStep.step_number == instance.current_step_number
-        )
+        ).with_for_update()
     )
     current_step = step_res.scalars().first()
     if current_step:
         current_step.status = "COMPLETED"
         current_step.completed_at = datetime.utcnow()
-        current_step.performed_by_id = req.performed_by
+        current_step.assigned_to = current_staff.id
 
+    step_name_display = f"Step {instance.current_step_number}"
     if instance.current_step_number < total_steps:
         next_step_num = instance.current_step_number + 1
         next_step_name = wf_def.steps_json[next_step_num - 1].get("name", f"Step {next_step_num}")
+        step_name_display = next_step_name
 
         instance.current_step_number = next_step_num
-        instance.current_step_name = next_step_name
 
         # Create record for new step
         next_step_record = WorkflowStep(
-            instance_id=instance_id,
+            workflow_instance_id=instance_id,
             step_number=next_step_num,
-            step_name=next_step_name,
+            name=next_step_name,
             status="IN_PROGRESS",
             started_at=datetime.utcnow()
         )
@@ -240,15 +274,25 @@ async def advance_workflow_step(
         field_changed="step",
         old_value=str(instance.current_step_number - 1),
         new_value=str(instance.current_step_number),
-        changed_by=req.performed_by,
+        changed_by=current_staff.id,
         change_reason=req.notes or f"Step {instance.current_step_number} updated"
     )
     db.add(audit)
 
     await db.commit()
     await db.refresh(instance)
-    logger.info(f"Workflow {instance_id} advanced to step {instance.current_step_number} ({instance.current_step_name})")
-    return instance
+    logger.info(f"Workflow {instance_id} advanced to step {instance.current_step_number} by {current_staff.id}")
+    return {
+        "id": instance.id,
+        "workflow_definition_id": instance.definition_id,
+        "encounter_id": instance.encounter_id,
+        "patient_id": instance.patient_id,
+        "current_step_number": instance.current_step_number,
+        "current_step_name": step_name_display,
+        "status": instance.status,
+        "started_at": instance.started_at,
+        "completed_at": instance.completed_at
+    }
 
 
 # ─── Queues and Tasks Endpoints ─────────────────────────────────────────────

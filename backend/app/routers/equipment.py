@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Equipment, EquipmentBooking, AuditLog
+from app.models import Equipment, EquipmentBooking, AuditLog, Staff
+from app.auth.dependencies import require_roles
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/equipment", tags=["Equipment & Resources"])
@@ -32,7 +33,6 @@ class EquipmentResponse(BaseModel):
 
 class EquipmentStatusUpdate(BaseModel):
     status: str = Field(..., example="MAINTENANCE")
-    changed_by: str = Field(default="TECH-001")
     reason: str = Field(default="Scheduled maintenance")
 
 
@@ -40,7 +40,6 @@ class EquipmentBookingCreate(BaseModel):
     equipment_id: str = Field(..., example="RES-CT-01")
     encounter_id: str = Field(..., example="ENC-0001")
     patient_id: str = Field(..., example="PAT-0001")
-    requested_by: str = Field(default="DOC-001")
     notes: Optional[str] = Field(None, example="CT Chest with contrast for suspected PE")
 
 
@@ -94,10 +93,13 @@ async def get_equipment(equipment_id: str, db: AsyncSession = Depends(get_db)):
 async def update_equipment_status(
     equipment_id: str,
     req: EquipmentStatusUpdate,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "TECHNICIAN"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update equipment operational status (AVAILABLE, MAINTENANCE, OUT_OF_SERVICE)."""
-    result = await db.execute(select(Equipment).where(Equipment.id == equipment_id))
+    """Update equipment operational status with pessimistic lock."""
+    result = await db.execute(
+        select(Equipment).where(Equipment.id == equipment_id).with_for_update()
+    )
     eq = result.scalars().first()
     if not eq:
         raise HTTPException(status_code=404, detail=f"Equipment {equipment_id} not found")
@@ -115,14 +117,14 @@ async def update_equipment_status(
         field_changed="status",
         old_value=old_status,
         new_value=req.status.upper(),
-        changed_by=req.changed_by,
+        changed_by=current_staff.id,
         change_reason=req.reason
     )
     db.add(audit)
 
     await db.commit()
     await db.refresh(eq)
-    logger.info(f"Equipment {equipment_id} status: {old_status} → {req.status.upper()}")
+    logger.info(f"Equipment {equipment_id} status: {old_status} → {req.status.upper()} by {current_staff.id}")
     return eq
 
 
@@ -131,15 +133,21 @@ async def update_equipment_status(
 @router.post("/bookings", response_model=EquipmentBookingResponse, status_code=201)
 async def create_equipment_booking(
     booking_in: EquipmentBookingCreate,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "TECHNICIAN", "CHARGE_NURSE"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Book a piece of equipment for a patient encounter (e.g., CT scan slot)."""
-    result = await db.execute(select(Equipment).where(Equipment.id == booking_in.equipment_id))
+    """Book a piece of equipment for a patient encounter with row-level locking."""
+    result = await db.execute(
+        select(Equipment).where(Equipment.id == booking_in.equipment_id).with_for_update()
+    )
     eq = result.scalars().first()
     if not eq:
         raise HTTPException(status_code=404, detail=f"Equipment {booking_in.equipment_id} not found")
-    if eq.status not in ("AVAILABLE", "RESERVED"):
-        raise HTTPException(status_code=400, detail=f"Equipment {booking_in.equipment_id} is {eq.status}, cannot book")
+    if eq.status != "AVAILABLE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Equipment {booking_in.equipment_id} is in '{eq.status}' state and cannot be booked"
+        )
 
     eq.status = "IN_USE"
     eq.current_patient_id = booking_in.patient_id
@@ -149,7 +157,7 @@ async def create_equipment_booking(
         equipment_id=booking_in.equipment_id,
         encounter_id=booking_in.encounter_id,
         patient_id=booking_in.patient_id,
-        requested_by=booking_in.requested_by,
+        requested_by=current_staff.id,
         notes=booking_in.notes,
         status="IN_PROGRESS"
     )
@@ -161,14 +169,14 @@ async def create_equipment_booking(
         field_changed="status",
         old_value="AVAILABLE",
         new_value="IN_USE",
-        changed_by=booking_in.requested_by,
+        changed_by=current_staff.id,
         change_reason=f"Equipment booked for encounter {booking_in.encounter_id}: {booking_in.notes or 'No notes'}"
     )
     db.add(audit)
 
     await db.commit()
     await db.refresh(booking)
-    logger.info(f"Equipment booking created: {booking.id} for {booking_in.equipment_id}")
+    logger.info(f"Equipment booking created: {booking.id} for {booking_in.equipment_id} by {current_staff.id}")
     return booking
 
 
@@ -184,26 +192,44 @@ async def list_active_bookings(db: AsyncSession = Depends(get_db)):
 @router.post("/bookings/{booking_id}/complete", response_model=EquipmentBookingResponse)
 async def complete_booking(
     booking_id: str,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "TECHNICIAN", "CHARGE_NURSE"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Mark an equipment booking as completed and release the equipment."""
-    result = await db.execute(select(EquipmentBooking).where(EquipmentBooking.id == booking_id))
+    """Mark an equipment booking as completed and atomically release the equipment."""
+    result = await db.execute(
+        select(EquipmentBooking).where(EquipmentBooking.id == booking_id).with_for_update()
+    )
     booking = result.scalars().first()
     if not booking:
         raise HTTPException(status_code=404, detail=f"Booking {booking_id} not found")
+    if booking.status == "COMPLETED":
+        raise HTTPException(status_code=400, detail=f"Booking {booking_id} is already completed")
 
     booking.status = "COMPLETED"
     booking.end_time = datetime.utcnow()
 
-    # Release equipment
-    eq_result = await db.execute(select(Equipment).where(Equipment.id == booking.equipment_id))
+    # Atomically lock and release equipment
+    eq_result = await db.execute(
+        select(Equipment).where(Equipment.id == booking.equipment_id).with_for_update()
+    )
     eq = eq_result.scalars().first()
     if eq:
         eq.status = "AVAILABLE"
         eq.current_patient_id = None
         eq.current_encounter_id = None
 
+    audit = AuditLog(
+        entity_type="equipment",
+        entity_id=booking.equipment_id,
+        field_changed="status",
+        old_value="IN_USE",
+        new_value="AVAILABLE",
+        changed_by=current_staff.id,
+        change_reason=f"Booking {booking_id} completed and equipment released"
+    )
+    db.add(audit)
+
     await db.commit()
     await db.refresh(booking)
-    logger.info(f"Equipment booking completed: {booking_id}, equipment {booking.equipment_id} released")
+    logger.info(f"Equipment booking completed: {booking_id}, equipment {booking.equipment_id} released by {current_staff.id}")
     return booking

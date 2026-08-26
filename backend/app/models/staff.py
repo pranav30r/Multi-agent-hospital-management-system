@@ -19,6 +19,7 @@ class Staff(Base):
     current_workload: Mapped[int] = mapped_column(Integer, default=0)
     max_workload: Mapped[int] = mapped_column(Integer, default=5)
     skills: Mapped[Optional[dict]] = mapped_column(JSON, default=list)  # ["ICU_CERTIFIED", "VENTILATOR_TRAINED"]
+    password_hash: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

@@ -13,13 +13,14 @@ from app.models import (
     Patient, Encounter, EmergencyEvent, AuditLog, WorkflowDefinition
 )
 
-async def export_hospital_snapshot(output_file: str = None):
+async def export_hospital_snapshot(output_file: str = None, session_factory=None):
     """Exports all core hospital relational tables into a portable JSON snapshot."""
     if not output_file:
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         output_file = f"hospital_snapshot_{timestamp}.json"
 
-    async with AsyncSessionLocal() as session:
+    factory = session_factory or AsyncSessionLocal
+    async with factory() as session:
         snapshot = {
             "exported_at": datetime.utcnow().isoformat(),
             "version": "1.0.0",
