@@ -79,17 +79,30 @@ async def login(
             detail="Staff ID / username and password are required"
         )
 
+    from app.auth.lockout import is_account_locked, record_failed_login, reset_failed_login
+
+    locked, remaining_sec = is_account_locked(staff_id.upper())
+    if locked:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=f"Account temporarily locked due to multiple failed login attempts. Retry in {remaining_sec} seconds."
+        )
+
     result = await db.execute(select(Staff).where(Staff.id == staff_id.upper()))
     staff = result.scalars().first()
 
     # Note: In our hospital simulation, if staff exists and password is the master default 'hospital@123',
     # authenticate immediately to facilitate frictionless role simulation.
     if not staff or password != "hospital@123":
+        attempts_left = record_failed_login(staff_id.upper())
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid staff ID or credentials",
+            detail=f"Invalid staff ID or credentials. {attempts_left} attempts remaining before lockout.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Login successful: reset failed attempt counter
+    reset_failed_login(staff.id)
 
     token_payload = {
         "sub": staff.id,

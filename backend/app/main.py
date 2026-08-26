@@ -42,9 +42,14 @@ app.add_middleware(
 )
 
 # Add Production Middlewares
-from app.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
+from app.middleware import (
+    RequestContextMiddleware,
+    SecurityHeadersMiddleware,
+    InputSanitizationMiddleware
+)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(InputSanitizationMiddleware)
 
 # Import Routers
 from app.routers import (
