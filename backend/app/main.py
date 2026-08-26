@@ -41,10 +41,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add Request Context Middleware (Request-ID correlation & process latency tracking)
+from app.middleware.request_context import RequestContextMiddleware
+app.add_middleware(RequestContextMiddleware)
+
 # Import Routers
 from app.routers import (
     auth, patients, beds, diseases, emergencies, approvals,
-    staff, equipment, audit, dashboard, workflows, predictions, events
+    staff, equipment, audit, dashboard, workflows, predictions, system, events
 )
 
 # Include REST Routers under API V1 Prefix
@@ -60,6 +64,7 @@ app.include_router(audit.router, prefix=settings.API_V1_STR)
 app.include_router(dashboard.router, prefix=settings.API_V1_STR)
 app.include_router(workflows.router, prefix=settings.API_V1_STR)
 app.include_router(predictions.router, prefix=settings.API_V1_STR)
+app.include_router(system.router, prefix=settings.API_V1_STR)
 
 # Include WebSocket Router (no API prefix — connects at /ws/events)
 app.include_router(events.router)
