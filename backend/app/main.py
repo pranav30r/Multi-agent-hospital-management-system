@@ -41,9 +41,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add Request Context Middleware (Request-ID correlation & process latency tracking)
-from app.middleware.request_context import RequestContextMiddleware
+# Add Production Middlewares
+from app.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Import Routers
 from app.routers import (
