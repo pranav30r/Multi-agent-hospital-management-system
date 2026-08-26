@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import EmergencyEvent, AuditLog
+from app.models import EmergencyEvent, AuditLog, Staff
+from app.auth.dependencies import require_roles
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/emergencies", tags=["Emergency Operations"])
@@ -18,10 +19,15 @@ class DeclareEmergencyRequest(BaseModel):
     description: str = Field(..., example="Major highway multivehicle collision; expecting 8 critical trauma arrivals")
     affected_departments: List[str] = Field(default_factory=lambda: ["DEP-ER", "DEP-ICU"])
     expected_patient_surge: int = Field(default=8, ge=1, le=50)
-    declared_by: str = Field(default="ADM-001")
 
-class EmergencyResponse(DeclareEmergencyRequest):
+class EmergencyResponse(BaseModel):
     id: str
+    event_type: str
+    severity: str
+    description: str
+    affected_departments: List[str]
+    expected_patient_surge: int
+    declared_by: str
     status: str
     declared_at: datetime
     resolved_at: Optional[datetime]
@@ -30,9 +36,13 @@ class EmergencyResponse(DeclareEmergencyRequest):
         from_attributes = True
 
 @router.post("/declare", response_model=EmergencyResponse, status_code=status.HTTP_201_CREATED)
-async def declare_emergency(req: DeclareEmergencyRequest, db: AsyncSession = Depends(get_db)):
+async def declare_emergency(
+    req: DeclareEmergencyRequest,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Declare a hospital-wide emergency / mass casualty event (Dashboard button action).
+    Declare a hospital-wide emergency event with RBAC enforcement.
     Triggers all emergency agents and escalates risk levels.
     """
     emergency = EmergencyEvent(
@@ -41,7 +51,7 @@ async def declare_emergency(req: DeclareEmergencyRequest, db: AsyncSession = Dep
         description=req.description,
         affected_departments=req.affected_departments,
         expected_patient_surge=req.expected_patient_surge,
-        declared_by=req.declared_by,
+        declared_by=current_staff.id,
         status="ACTIVE"
     )
     db.add(emergency)
@@ -52,14 +62,14 @@ async def declare_emergency(req: DeclareEmergencyRequest, db: AsyncSession = Dep
         field_changed="status",
         old_value="NORMAL",
         new_value=f"EMERGENCY_{req.event_type}",
-        changed_by=req.declared_by,
+        changed_by=current_staff.id,
         change_reason=f"Emergency Declared: {req.description}"
     )
     db.add(audit)
 
     await db.commit()
     await db.refresh(emergency)
-    logger.info(f"EMERGENCY DECLARED: {emergency.id} ({req.event_type}) by {req.declared_by}")
+    logger.info(f"EMERGENCY DECLARED: {emergency.id} ({req.event_type}) by {current_staff.id}")
     return emergency
 
 @router.get("/active", response_model=List[EmergencyResponse])
@@ -69,12 +79,20 @@ async def list_active_emergencies(db: AsyncSession = Depends(get_db)):
     return res.scalars().all()
 
 @router.post("/{emergency_id}/resolve", response_model=EmergencyResponse)
-async def resolve_emergency(emergency_id: str, resolved_by: str = "ADM-001", db: AsyncSession = Depends(get_db)):
-    """Resolve an emergency event and return system to normal operating state."""
-    res = await db.execute(select(EmergencyEvent).where(EmergencyEvent.id == emergency_id))
+async def resolve_emergency(
+    emergency_id: str,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Resolve an emergency event with row-level lock and RBAC."""
+    res = await db.execute(
+        select(EmergencyEvent).where(EmergencyEvent.id == emergency_id).with_for_update()
+    )
     emergency = res.scalars().first()
     if not emergency:
         raise HTTPException(status_code=404, detail="Emergency event not found")
+    if emergency.status == "RESOLVED":
+        raise HTTPException(status_code=400, detail="Emergency event is already resolved")
 
     emergency.status = "RESOLVED"
     emergency.resolved_at = datetime.utcnow()
@@ -85,12 +103,12 @@ async def resolve_emergency(emergency_id: str, resolved_by: str = "ADM-001", db:
         field_changed="status",
         old_value="ACTIVE",
         new_value="RESOLVED",
-        changed_by=resolved_by,
-        change_reason="Emergency event resolved by admin"
+        changed_by=current_staff.id,
+        change_reason="Emergency event resolved by authorized staff"
     )
     db.add(audit)
 
     await db.commit()
     await db.refresh(emergency)
-    logger.info(f"EMERGENCY RESOLVED: {emergency.id} by {resolved_by}")
+    logger.info(f"EMERGENCY RESOLVED: {emergency.id} by {current_staff.id}")
     return emergency

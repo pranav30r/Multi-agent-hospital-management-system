@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.prediction import PredictionRun
 from app.models.agent import AuditLog
+from app.models.staff import Staff
+from app.auth.dependencies import require_roles
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/predictions", tags=["Predictive Analytics & Forecasting"])
@@ -81,11 +83,12 @@ async def list_prediction_history(
 @router.post("/record", response_model=PredictionResponse, status_code=201)
 async def record_prediction_run(
     req: PredictionRecordRequest,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "TECHNICIAN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Persist an inference result from the Prediction Engine or AI agents.
-    Logs inference metrics and confidence scores to the database.
+    Logs inference metrics and confidence scores to the database with RBAC.
     """
     prediction = PredictionRun(
         model_name=req.model_name,
@@ -98,6 +101,7 @@ async def record_prediction_run(
         target_date=req.target_date or datetime.utcnow()
     )
     db.add(prediction)
+    await db.flush()
 
     audit = AuditLog(
         entity_type="prediction",
@@ -105,14 +109,14 @@ async def record_prediction_run(
         field_changed="inference",
         old_value=None,
         new_value=req.prediction_type.upper(),
-        changed_by="PREDICTION_ENGINE",
+        changed_by=current_staff.id,
         change_reason=f"Recorded model inference for {req.model_name} (confidence {req.confidence_score})"
     )
     db.add(audit)
 
     await db.commit()
     await db.refresh(prediction)
-    logger.info(f"Prediction recorded: {prediction.id} ({req.model_name} / {req.prediction_type})")
+    logger.info(f"Prediction recorded: {prediction.id} ({req.model_name} / {req.prediction_type}) by {current_staff.id}")
     return prediction
 
 

@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Disease
+from app.models import Disease, Staff
+from app.auth.dependencies import require_roles
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/diseases", tags=["Disease Registry"])
@@ -17,10 +18,15 @@ class DiseaseCreate(BaseModel):
     category: str = Field(default="Cardiovascular", example="Cardiovascular")
     is_communicable: bool = Field(default=False)
     requires_isolation: bool = Field(default=False)
-    added_by: str = Field(default="REC-001")
 
-class DiseaseResponse(DiseaseCreate):
+class DiseaseResponse(BaseModel):
     id: str
+    name: str
+    icd_code: Optional[str]
+    category: str
+    is_communicable: bool
+    requires_isolation: bool
+    added_by: str
 
     class Config:
         from_attributes = True
@@ -32,9 +38,13 @@ async def list_diseases(db: AsyncSession = Depends(get_db)):
     return res.scalars().all()
 
 @router.post("", response_model=DiseaseResponse, status_code=status.HTTP_201_CREATED)
-async def add_disease(disease_in: DiseaseCreate, db: AsyncSession = Depends(get_db)):
+async def add_disease(
+    disease_in: DiseaseCreate,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "RECEPTIONIST"])),
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Add a new disease to the system registry (Receptionist feature).
+    Add a new disease to the system registry with authenticated role check.
     Immediately updates all disease selection dropdowns across the application.
     """
     # Check for duplicate name
@@ -48,10 +58,10 @@ async def add_disease(disease_in: DiseaseCreate, db: AsyncSession = Depends(get_
         category=disease_in.category,
         is_communicable=disease_in.is_communicable,
         requires_isolation=disease_in.requires_isolation,
-        added_by=disease_in.added_by
+        added_by=current_staff.id
     )
     db.add(disease)
     await db.commit()
     await db.refresh(disease)
-    logger.info(f"Added new disease to registry: {disease.name} (ICD: {disease.icd_code}) by {disease.added_by}")
+    logger.info(f"Added new disease to registry: {disease.name} (ICD: {disease.icd_code}) by {current_staff.id}")
     return disease

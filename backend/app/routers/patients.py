@@ -5,15 +5,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Patient, Encounter
+from app.models import Patient, Encounter, AuditLog, Staff
+from app.auth.dependencies import require_roles
 from app.schemas.patient import PatientCreate, PatientResponse, EncounterCreate, EncounterResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/patients", tags=["Patients & Intake"])
 
 @router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)
-async def create_patient(patient_in: PatientCreate, db: AsyncSession = Depends(get_db)):
-    """Register a new synthetic patient."""
+async def create_patient(
+    patient_in: PatientCreate,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "NURSE", "CHARGE_NURSE", "RECEPTIONIST"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Register a new patient in the hospital system with RBAC enforcement."""
     patient = Patient(
         first_name=patient_in.first_name,
         last_name=patient_in.last_name,
@@ -26,9 +31,22 @@ async def create_patient(patient_in: PatientCreate, db: AsyncSession = Depends(g
         chronic_conditions=patient_in.chronic_conditions
     )
     db.add(patient)
+    await db.flush()
+
+    audit = AuditLog(
+        entity_type="patient",
+        entity_id=patient.id,
+        field_changed="registration",
+        old_value=None,
+        new_value="REGISTERED",
+        changed_by=current_staff.id,
+        change_reason=f"Patient registered by {current_staff.role}"
+    )
+    db.add(audit)
+
     await db.commit()
     await db.refresh(patient)
-    logger.info(f"Registered patient: {patient.id} ({patient.first_name} {patient.last_name})")
+    logger.info(f"Registered patient: {patient.id} ({patient.first_name} {patient.last_name}) by {current_staff.id}")
     return patient
 
 @router.get("", response_model=List[PatientResponse])
@@ -47,8 +65,12 @@ async def get_patient(patient_id: str, db: AsyncSession = Depends(get_db)):
     return patient
 
 @router.post("/encounters", response_model=EncounterResponse, status_code=status.HTTP_201_CREATED)
-async def create_encounter(encounter_in: EncounterCreate, db: AsyncSession = Depends(get_db)):
-    """Create a new hospital intake encounter for a patient."""
+async def create_encounter(
+    encounter_in: EncounterCreate,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "NURSE", "CHARGE_NURSE", "RECEPTIONIST"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new hospital intake encounter for a patient with RBAC enforcement."""
     # Verify patient exists
     res = await db.execute(select(Patient).where(Patient.id == encounter_in.patient_id))
     if not res.scalars().first():
@@ -70,9 +92,22 @@ async def create_encounter(encounter_in: EncounterCreate, db: AsyncSession = Dep
         patient_status="REGISTERED"
     )
     db.add(encounter)
+    await db.flush()
+
+    audit = AuditLog(
+        entity_type="encounter",
+        entity_id=encounter.id,
+        field_changed="intake",
+        old_value=None,
+        new_value="REGISTERED",
+        changed_by=current_staff.id,
+        change_reason=f"Encounter created for patient {encounter_in.patient_id}"
+    )
+    db.add(audit)
+
     await db.commit()
     await db.refresh(encounter)
-    logger.info(f"Created intake encounter {encounter.id} for patient {encounter.patient_id}")
+    logger.info(f"Created intake encounter {encounter.id} for patient {encounter.patient_id} by {current_staff.id}")
     return encounter
 
 @router.get("/encounters/active", response_model=List[EncounterResponse])

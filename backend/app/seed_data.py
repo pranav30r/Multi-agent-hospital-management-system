@@ -203,8 +203,12 @@ async def seed_database():
         for bed in BEDS_DATA:
             session.add(Bed(**bed))
             
+        from app.auth.security import get_password_hash
+        default_pwd_hash = get_password_hash("hospital@123")
+
         for staff in STAFF_DATA:
-            session.add(Staff(**staff))
+            staff_dict = {**staff, "password_hash": default_pwd_hash}
+            session.add(Staff(**staff_dict))
             
         for eq in EQUIPMENT_DATA:
             session.add(Equipment(**eq))

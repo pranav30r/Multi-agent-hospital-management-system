@@ -16,6 +16,7 @@ from app.seed_data import (
     DISEASES_DATA, WORKFLOW_DEFINITIONS_DATA
 )
 from app.models import Department, Bed, Staff, Equipment, Disease, WorkflowDefinition
+from app.auth.security import get_password_hash, create_access_token
 
 # In-memory SQLite async database for isolated fast test runs
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -46,6 +47,8 @@ async def test_db():
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    default_pwd_hash = get_password_hash("hospital@123")
+
     # Seed data
     async with TestingSessionLocal() as session:
         # Departments
@@ -54,9 +57,10 @@ async def test_db():
         # Beds
         for b in BEDS_DATA:
             session.add(Bed(**b, status="AVAILABLE"))
-        # Staff
+        # Staff (with true bcrypt password hash)
         for s in STAFF_DATA:
-            session.add(Staff(**s, status="AVAILABLE", current_workload=0))
+            staff_data = {**s, "password_hash": default_pwd_hash, "status": "AVAILABLE", "current_workload": 0}
+            session.add(Staff(**staff_data))
         # Equipment
         for e in EQUIPMENT_DATA:
             session.add(Equipment(**e, status="AVAILABLE"))
@@ -89,3 +93,33 @@ async def client(test_db):
         yield ac
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def make_auth_headers():
+    """Helper fixture to generate JWT authorization headers for any staff role."""
+    def _make(staff_id: str = "DOC-001", role: str = "DOCTOR", name: str = "Dr. Test", department_id: str = "DEP-ER"):
+        token = create_access_token({
+            "sub": staff_id,
+            "role": role,
+            "name": name,
+            "department_id": department_id
+        })
+        return {"Authorization": f"Bearer {token}"}
+    return _make
+
+
+@pytest_asyncio.fixture(scope="function")
+async def auth_client(client, make_auth_headers):
+    """Client pre-authenticated as a DOCTOR (DOC-001)."""
+    headers = make_auth_headers(staff_id="DOC-001", role="DOCTOR")
+    client.headers.update(headers)
+    return client
+
+
+@pytest_asyncio.fixture(scope="function")
+async def admin_client(client, make_auth_headers):
+    """Client pre-authenticated as an ADMINISTRATOR (ADM-001)."""
+    headers = make_auth_headers(staff_id="ADM-001", role="ADMINISTRATOR")
+    client.headers.update(headers)
+    return client

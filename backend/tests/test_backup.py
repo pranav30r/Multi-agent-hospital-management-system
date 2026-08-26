@@ -7,7 +7,7 @@ from scripts.backup_db import export_hospital_snapshot
 async def test_export_hospital_snapshot_creates_json(test_db, tmp_path):
     """Verify that export_hospital_snapshot generates a valid populated JSON file."""
     output_file = str(tmp_path / "test_snapshot.json")
-    await export_hospital_snapshot(output_file)
+    await export_hospital_snapshot(output_file, session_factory=test_db)
 
     assert os.path.exists(output_file)
     with open(output_file, "r", encoding="utf-8") as f:

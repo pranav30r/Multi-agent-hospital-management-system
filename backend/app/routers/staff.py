@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Staff, StaffShift, StaffSkill, AuditLog
+from app.auth.dependencies import require_roles
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/staff", tags=["Staff & Workforce"])
@@ -34,7 +35,6 @@ class StaffResponse(BaseModel):
 
 class StaffStatusUpdate(BaseModel):
     status: str = Field(..., example="BUSY")
-    changed_by: str = Field(default="ADM-001")
     reason: str = Field(default="Manual status update")
 
 
@@ -109,10 +109,13 @@ async def get_staff_member(staff_id: str, db: AsyncSession = Depends(get_db)):
 async def update_staff_status(
     staff_id: str,
     req: StaffStatusUpdate,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update a staff member's operational status (AVAILABLE, BUSY, ON_BREAK, etc.)."""
-    result = await db.execute(select(Staff).where(Staff.id == staff_id))
+    """Update a staff member's operational status with row lock and RBAC."""
+    result = await db.execute(
+        select(Staff).where(Staff.id == staff_id).with_for_update()
+    )
     staff = result.scalars().first()
     if not staff:
         raise HTTPException(status_code=404, detail=f"Staff member {staff_id} not found")
@@ -126,14 +129,14 @@ async def update_staff_status(
         field_changed="status",
         old_value=old_status,
         new_value=req.status.upper(),
-        changed_by=req.changed_by,
+        changed_by=current_staff.id,
         change_reason=req.reason
     )
     db.add(audit)
 
     await db.commit()
     await db.refresh(staff)
-    logger.info(f"Staff {staff_id} status: {old_status} → {req.status.upper()} by {req.changed_by}")
+    logger.info(f"Staff {staff_id} status: {old_status} → {req.status.upper()} by {current_staff.id}")
     return staff
 
 
@@ -141,10 +144,13 @@ async def update_staff_status(
 async def increment_workload(
     staff_id: str,
     delta: int = Query(1, description="Increment (+1) or decrement (-1) workload"),
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Adjust a staff member's active patient workload count."""
-    result = await db.execute(select(Staff).where(Staff.id == staff_id))
+    """Adjust a staff member's active patient workload count with row lock."""
+    result = await db.execute(
+        select(Staff).where(Staff.id == staff_id).with_for_update()
+    )
     staff = result.scalars().first()
     if not staff:
         raise HTTPException(status_code=404, detail=f"Staff member {staff_id} not found")
@@ -158,9 +164,20 @@ async def increment_workload(
     elif staff.status == "BUSY" and staff.current_workload < staff.max_workload:
         staff.status = "AVAILABLE"
 
+    audit = AuditLog(
+        entity_type="staff",
+        entity_id=staff_id,
+        field_changed="workload",
+        old_value=str(old_load),
+        new_value=str(staff.current_workload),
+        changed_by=current_staff.id,
+        change_reason=f"Workload adjusted by delta={delta}"
+    )
+    db.add(audit)
+
     await db.commit()
     await db.refresh(staff)
-    logger.info(f"Staff {staff_id} workload: {old_load} → {staff.current_workload}")
+    logger.info(f"Staff {staff_id} workload: {old_load} → {staff.current_workload} by {current_staff.id}")
     return {"id": staff.id, "current_workload": staff.current_workload, "status": staff.status}
 
 
@@ -208,9 +225,12 @@ async def list_shifts(
 
 
 @router.post("/shifts", response_model=StaffShiftResponse, status_code=201)
-async def create_shift(shift_in: StaffShiftCreate, db: AsyncSession = Depends(get_db)):
+async def create_shift(
+    shift_in: StaffShiftCreate,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "CHARGE_NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
     """Schedule a new shift for a staff member."""
-    # Verify staff exists
     res = await db.execute(select(Staff).where(Staff.id == shift_in.staff_id))
     if not res.scalars().first():
         raise HTTPException(status_code=404, detail=f"Staff {shift_in.staff_id} not found")
@@ -225,7 +245,7 @@ async def create_shift(shift_in: StaffShiftCreate, db: AsyncSession = Depends(ge
     db.add(shift)
     await db.commit()
     await db.refresh(shift)
-    logger.info(f"Shift created: {shift.id} for {shift_in.staff_id} ({shift_in.shift_type})")
+    logger.info(f"Shift created: {shift.id} for {shift_in.staff_id} ({shift_in.shift_type}) by {current_staff.id}")
     return shift
 
 
@@ -239,7 +259,11 @@ async def list_staff_skills(staff_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/skills", response_model=StaffSkillResponse, status_code=201)
-async def add_staff_skill(skill_in: StaffSkillCreate, db: AsyncSession = Depends(get_db)):
+async def add_staff_skill(
+    skill_in: StaffSkillCreate,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR"])),
+    db: AsyncSession = Depends(get_db)
+):
     """Register a new certification/skill for a staff member."""
     res = await db.execute(select(Staff).where(Staff.id == skill_in.staff_id))
     if not res.scalars().first():
@@ -253,5 +277,5 @@ async def add_staff_skill(skill_in: StaffSkillCreate, db: AsyncSession = Depends
     db.add(skill)
     await db.commit()
     await db.refresh(skill)
-    logger.info(f"Skill added: {skill_in.skill_name} for {skill_in.staff_id}")
+    logger.info(f"Skill added: {skill_in.skill_name} for {skill_in.staff_id} by {current_staff.id}")
     return skill
