@@ -1,16 +1,20 @@
 import logging
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Patient, Encounter, AuditLog, Staff
+from app.models.staff import Staff
 from app.auth.dependencies import require_roles
 from app.schemas.patient import PatientCreate, PatientResponse, EncounterCreate, EncounterResponse
+from app.services.patient_service import PatientService
+from app.services.encounter_service import EncounterService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/patients", tags=["Patients & Intake"])
+
+
+# ─── Patient Endpoints ──────────────────────────────────────────────────────
 
 @router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)
 async def create_patient(
@@ -19,7 +23,8 @@ async def create_patient(
     db: AsyncSession = Depends(get_db)
 ):
     """Register a new patient in the hospital system with RBAC enforcement."""
-    patient = Patient(
+    service = PatientService(db)
+    return await service.register_patient(
         first_name=patient_in.first_name,
         last_name=patient_in.last_name,
         age=patient_in.age,
@@ -28,41 +33,51 @@ async def create_patient(
         contact_phone=patient_in.contact_phone,
         emergency_contact=patient_in.emergency_contact,
         allergies=patient_in.allergies,
-        chronic_conditions=patient_in.chronic_conditions
+        chronic_conditions=patient_in.chronic_conditions,
+        actor_id=current_staff.id,
+        actor_role=current_staff.role
     )
-    db.add(patient)
-    await db.flush()
 
-    audit = AuditLog(
-        entity_type="patient",
-        entity_id=patient.id,
-        field_changed="registration",
-        old_value=None,
-        new_value="REGISTERED",
-        changed_by=current_staff.id,
-        change_reason=f"Patient registered by {current_staff.role}"
-    )
-    db.add(audit)
-
-    await db.commit()
-    await db.refresh(patient)
-    logger.info(f"Registered patient: {patient.id} ({patient.first_name} {patient.last_name}) by {current_staff.id}")
-    return patient
 
 @router.get("", response_model=List[PatientResponse])
-async def list_patients(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db)):
-    """List all registered patients."""
-    result = await db.execute(select(Patient).offset(skip).limit(limit))
-    return result.scalars().all()
+async def list_patients(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    search: Optional[str] = Query(None, description="Search by name, phone, or ID"),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all registered patients with optional pagination and search."""
+    service = PatientService(db)
+    if search:
+        return await service.search_patients(query_str=search, limit=limit)
+    return await service.list_patients(skip=skip, limit=limit)
+
 
 @router.get("/{patient_id}", response_model=PatientResponse)
 async def get_patient(patient_id: str, db: AsyncSession = Depends(get_db)):
     """Get patient details by ID."""
-    result = await db.execute(select(Patient).where(Patient.id == patient_id))
-    patient = result.scalars().first()
+    service = PatientService(db)
+    patient = await service.get_patient_by_id(patient_id)
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
     return patient
+
+
+@router.get("/{patient_id}/history", response_model=List[EncounterResponse])
+async def get_patient_history(patient_id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve full chronological hospital encounter history for a patient."""
+    service = PatientService(db)
+    return await service.get_patient_history(patient_id)
+
+
+@router.get("/{patient_id}/timeline")
+async def get_patient_timeline(patient_id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve full unified chronological medical timeline across encounters and clinical intakes."""
+    service = PatientService(db)
+    return await service.get_patient_timeline(patient_id)
+
+
+# ─── Encounter Endpoints ────────────────────────────────────────────────────
 
 @router.post("/encounters", response_model=EncounterResponse, status_code=status.HTTP_201_CREATED)
 async def create_encounter(
@@ -71,12 +86,8 @@ async def create_encounter(
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new hospital intake encounter for a patient with RBAC enforcement."""
-    # Verify patient exists
-    res = await db.execute(select(Patient).where(Patient.id == encounter_in.patient_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=404, detail=f"Patient {encounter_in.patient_id} not found")
-
-    encounter = Encounter(
+    service = EncounterService(db)
+    return await service.create_encounter(
         patient_id=encounter_in.patient_id,
         chief_complaint=encounter_in.chief_complaint,
         encounter_type=encounter_in.encounter_type,
@@ -89,29 +100,22 @@ async def create_encounter(
         pain_level=encounter_in.pain_level,
         respiratory_rate=encounter_in.respiratory_rate,
         gcs_score=encounter_in.gcs_score,
-        patient_status="REGISTERED"
+        actor_id=current_staff.id
     )
-    db.add(encounter)
-    await db.flush()
 
-    audit = AuditLog(
-        entity_type="encounter",
-        entity_id=encounter.id,
-        field_changed="intake",
-        old_value=None,
-        new_value="REGISTERED",
-        changed_by=current_staff.id,
-        change_reason=f"Encounter created for patient {encounter_in.patient_id}"
-    )
-    db.add(audit)
-
-    await db.commit()
-    await db.refresh(encounter)
-    logger.info(f"Created intake encounter {encounter.id} for patient {encounter.patient_id} by {current_staff.id}")
-    return encounter
 
 @router.get("/encounters/active", response_model=List[EncounterResponse])
 async def list_active_encounters(db: AsyncSession = Depends(get_db)):
     """List all active hospital encounters."""
-    result = await db.execute(select(Encounter).where(Encounter.status == "ACTIVE"))
-    return result.scalars().all()
+    service = EncounterService(db)
+    return await service.list_active_encounters()
+
+
+@router.get("/encounters/{encounter_id}", response_model=EncounterResponse)
+async def get_encounter(encounter_id: str, db: AsyncSession = Depends(get_db)):
+    """Get details of a specific encounter."""
+    service = EncounterService(db)
+    encounter = await service.get_encounter_by_id(encounter_id)
+    if not encounter:
+        raise HTTPException(status_code=404, detail=f"Encounter {encounter_id} not found")
+    return encounter

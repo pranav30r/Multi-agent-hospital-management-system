@@ -52,12 +52,18 @@ app.add_middleware(InputSanitizationMiddleware)
 # Import Routers
 from app.routers import (
     auth, patients, beds, diseases, emergencies, approvals,
-    staff, equipment, audit, dashboard, workflows, predictions, system, events
+    staff, equipment, audit, dashboard, workflows, predictions, system, events, intake, intelligence,
+    documents, investigations, clinical_priority
 )
 
 # Include REST Routers under API V1 Prefix
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(patients.router, prefix=settings.API_V1_STR)
+app.include_router(intake.router, prefix=settings.API_V1_STR)
+app.include_router(intelligence.router, prefix=settings.API_V1_STR)
+app.include_router(clinical_priority.router, prefix=settings.API_V1_STR)
+app.include_router(documents.router, prefix=settings.API_V1_STR)
+app.include_router(investigations.router, prefix=settings.API_V1_STR)
 app.include_router(beds.router, prefix=settings.API_V1_STR)
 app.include_router(diseases.router, prefix=settings.API_V1_STR)
 app.include_router(emergencies.router, prefix=settings.API_V1_STR)

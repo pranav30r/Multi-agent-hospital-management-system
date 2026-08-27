@@ -27,15 +27,17 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     Creates a cryptographically signed JWT access token.
     Claims typically include: sub (user/staff ID), role, name, department_id.
     """
+    from app.utils.datetime_utils import utc_now
+
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = utc_now() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = utc_now() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": utc_now(),
         "type": "access_token"
     })
     

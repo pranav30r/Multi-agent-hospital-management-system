@@ -1,4 +1,7 @@
 from app.models.patient import Patient, Encounter
+from app.models.intake import ClinicalIntakeSession, IntakeQuestion, IntakeResponse, ClinicalAssessment
+from app.models.clinical_document import ClinicalDocument, ClinicalInvestigation
+from app.models.priority import ClinicalPriorityRecommendation
 from app.models.department import Department
 from app.models.bed import Bed, BedAssignment
 from app.models.staff import Staff, StaffShift, StaffSkill
@@ -18,6 +21,13 @@ from app.models.agent import (
 __all__ = [
     "Patient",
     "Encounter",
+    "ClinicalIntakeSession",
+    "IntakeQuestion",
+    "IntakeResponse",
+    "ClinicalAssessment",
+    "ClinicalDocument",
+    "ClinicalInvestigation",
+    "ClinicalPriorityRecommendation",
     "Department",
     "Bed",
     "BedAssignment",

@@ -12,7 +12,7 @@ async def test_approval_service_lifecycle(test_db):
     async with test_db() as session:
         service = ApprovalService(session)
 
-        # 1. Create a pending decision & approval item
+        # 1. Create a decision
         dec = AgentDecision(
             id="DEC-SVC-TEST-01",
             agent_id="AGENT-TRIAGE",
@@ -21,26 +21,28 @@ async def test_approval_service_lifecycle(test_db):
             reasoning="Patient unstable",
             status="PROPOSED"
         )
-        item = ApprovalItem(
-            id="APP-SVC-TEST-01",
+        session.add(dec)
+        await session.commit()
+
+        # 2. Test create_approval_request
+        item = await service.create_approval_request(
             decision_id="DEC-SVC-TEST-01",
             agent_id="AGENT-TRIAGE",
             action_type="BED_TRANSFER",
-            risk_level="HIGH",
             proposed_action={"bed_id": "BED-ICU-02"},
             reasoning="Patient unstable",
-            status="PENDING"
+            risk_level="HIGH"
         )
-        session.add_all([dec, item])
-        await session.commit()
+        assert item.status == "PENDING"
+        assert item.id.startswith("APR-")
 
-        # 2. Test list_pending_approvals
+        # 3. Test list_pending_approvals
         pending = await service.list_pending_approvals()
-        assert any(i.id == "APP-SVC-TEST-01" for i in pending)
+        assert any(i.id == item.id for i in pending)
 
-        # 3. Test review_approval (APPROVE)
+        # 4. Test review_approval (APPROVE)
         resolved = await service.review_approval(
-            approval_id="APP-SVC-TEST-01",
+            approval_id=item.id,
             action="APPROVE",
             actor_id="DOC-001",
             actor_role="DOCTOR"
@@ -48,10 +50,10 @@ async def test_approval_service_lifecycle(test_db):
         assert resolved.status == "APPROVE"
         assert resolved.reviewed_by == "DOC-001"
 
-        # 4. Test double review rejection
+        # 5. Test double review rejection
         with pytest.raises(HTTPException) as exc_info:
             await service.review_approval(
-                approval_id="APP-SVC-TEST-01",
+                approval_id=item.id,
                 action="REJECT",
                 actor_id="DOC-002",
                 actor_role="DOCTOR"
@@ -61,12 +63,71 @@ async def test_approval_service_lifecycle(test_db):
 
 
 @pytest.mark.asyncio
+async def test_approval_service_expire_and_modify(test_db):
+    """Test modify, reject, and expire flows in ApprovalService."""
+    async with test_db() as session:
+        service = ApprovalService(session)
+
+        # 1. Decision & Approval for Modify
+        dec2 = AgentDecision(
+            id="DEC-SVC-TEST-02",
+            agent_id="AGENT-BED",
+            action_type="BED_ALLOCATION",
+            proposed_action={"bed_id": "BED-ER-01"},
+            reasoning="Need bed",
+            status="PROPOSED"
+        )
+        session.add(dec2)
+        await session.commit()
+
+        item2 = await service.create_approval_request(
+            decision_id="DEC-SVC-TEST-02",
+            agent_id="AGENT-BED",
+            action_type="BED_ALLOCATION",
+            proposed_action={"bed_id": "BED-ER-01"},
+            reasoning="Need bed"
+        )
+
+        mod_item = await service.modify_action(
+            approval_id=item2.id,
+            modification={"bed_id": "BED-ICU-01"},
+            actor_id="DOC-001",
+            actor_role="DOCTOR"
+        )
+        assert mod_item.status == "MODIFY"
+        assert mod_item.modification == {"bed_id": "BED-ICU-01"}
+
+        # 2. Decision & Approval for Expire
+        dec3 = AgentDecision(
+            id="DEC-SVC-TEST-03",
+            agent_id="AGENT-BED",
+            action_type="BED_ALLOCATION",
+            proposed_action={"bed_id": "BED-ER-02"},
+            reasoning="Need bed",
+            status="PROPOSED"
+        )
+        session.add(dec3)
+        await session.commit()
+
+        item3 = await service.create_approval_request(
+            decision_id="DEC-SVC-TEST-03",
+            agent_id="AGENT-BED",
+            action_type="BED_ALLOCATION",
+            proposed_action={"bed_id": "BED-ER-02"},
+            reasoning="Need bed"
+        )
+
+        exp_item = await service.expire_approval(approval_id=item3.id)
+        assert exp_item.status == "EXPIRED"
+
+
+@pytest.mark.asyncio
 async def test_emergency_service_lifecycle(test_db):
     """Direct unit test for EmergencyService operations."""
     async with test_db() as session:
         service = EmergencyService(session)
 
-        # 1. Declare Emergency
+        # 1. Declare Emergency with valid departments from DB
         emr = await service.declare_emergency(
             event_type="MASS_CASUALTY",
             severity="CRITICAL",
@@ -82,7 +143,23 @@ async def test_emergency_service_lifecycle(test_db):
         active = await service.list_active_emergencies()
         assert any(e.id == emr.id for e in active)
 
-        # 3. Resolve Emergency
+        # 3. Affected departments query
+        aff_depts = await service.get_affected_departments()
+        assert "DEP-ER" in aff_depts
+        assert "DEP-ICU" in aff_depts
+
+        # 4. Escalate emergency
+        esc = await service.escalate_emergency(
+            emergency_id=emr.id,
+            additional_surge=5,
+            additional_departments=["DEP-SUR"],
+            reason="Secondary surge arrived",
+            actor_id="ADM-001"
+        )
+        assert esc.status == "ESCALATED"
+        assert esc.expected_patient_surge == 15
+
+        # 5. Resolve Emergency
         resolved = await service.resolve_emergency(
             emergency_id=emr.id,
             actor_id="DOC-001"
@@ -90,7 +167,7 @@ async def test_emergency_service_lifecycle(test_db):
         assert resolved.status == "RESOLVED"
         assert resolved.resolved_at is not None
 
-        # 4. Double resolve rejection
+        # 6. Double resolve rejection
         with pytest.raises(HTTPException) as exc_info:
             await service.resolve_emergency(
                 emergency_id=emr.id,
@@ -149,9 +226,27 @@ async def test_workflow_service_lifecycle(test_db):
         )
         assert step_2["current_step_number"] >= 2
 
-        # 5. List Queues & Tasks
-        queues = await service.list_queues()
-        assert isinstance(queues, list)
+        # 5. Queue operations
+        q_entry = await service.add_to_queue(
+            patient_id="PAT-WF-SVC-01",
+            encounter_id="ENC-WF-SVC-01",
+            department_id="DEP-ER",
+            queue_type="TRIAGE_QUEUE"
+        )
+        assert q_entry.status == "WAITING"
+        assert q_entry.position >= 1
 
-        tasks = await service.list_tasks()
-        assert isinstance(tasks, list)
+        updated_q = await service.update_queue_status(queue_id=q_entry.id, status="CALLED")
+        assert updated_q.status == "CALLED"
+
+        # 6. Task operations
+        tsk = await service.create_task(
+            encounter_id="ENC-WF-SVC-01",
+            patient_id="PAT-WF-SVC-01",
+            title="Perform Blood Gas Analysis",
+            task_type="LAB_TEST"
+        )
+        assert tsk.status == "PENDING"
+
+        upd_tsk = await service.update_task_status(task_id=tsk.id, status="COMPLETED")
+        assert upd_tsk.status == "COMPLETED"

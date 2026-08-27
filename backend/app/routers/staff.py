@@ -3,12 +3,12 @@ from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Staff, StaffShift, StaffSkill, AuditLog
+from app.models.staff import Staff
 from app.auth.dependencies import require_roles
+from app.services.staff_service import StaffService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/staff", tags=["Staff & Workforce"])
@@ -84,22 +84,15 @@ async def list_staff(
     db: AsyncSession = Depends(get_db)
 ):
     """List all hospital staff with optional filters."""
-    query = select(Staff)
-    if role:
-        query = query.where(Staff.role == role.upper())
-    if department_id:
-        query = query.where(Staff.department_id == department_id)
-    if status:
-        query = query.where(Staff.status == status.upper())
-    result = await db.execute(query.order_by(Staff.role, Staff.id))
-    return result.scalars().all()
+    service = StaffService(db)
+    return await service.list_staff(role=role, department_id=department_id, status=status)
 
 
 @router.get("/{staff_id}", response_model=StaffResponse)
 async def get_staff_member(staff_id: str, db: AsyncSession = Depends(get_db)):
     """Get detailed information for a specific staff member."""
-    result = await db.execute(select(Staff).where(Staff.id == staff_id))
-    staff = result.scalars().first()
+    service = StaffService(db)
+    staff = await service.get_staff_by_id(staff_id)
     if not staff:
         raise HTTPException(status_code=404, detail=f"Staff member {staff_id} not found")
     return staff
@@ -113,31 +106,13 @@ async def update_staff_status(
     db: AsyncSession = Depends(get_db)
 ):
     """Update a staff member's operational status with row lock and RBAC."""
-    result = await db.execute(
-        select(Staff).where(Staff.id == staff_id).with_for_update()
+    service = StaffService(db)
+    return await service.update_staff_status(
+        staff_id=staff_id,
+        new_status=req.status,
+        actor_id=current_staff.id,
+        reason=req.reason
     )
-    staff = result.scalars().first()
-    if not staff:
-        raise HTTPException(status_code=404, detail=f"Staff member {staff_id} not found")
-
-    old_status = staff.status
-    staff.status = req.status.upper()
-
-    audit = AuditLog(
-        entity_type="staff",
-        entity_id=staff_id,
-        field_changed="status",
-        old_value=old_status,
-        new_value=req.status.upper(),
-        changed_by=current_staff.id,
-        change_reason=req.reason
-    )
-    db.add(audit)
-
-    await db.commit()
-    await db.refresh(staff)
-    logger.info(f"Staff {staff_id} status: {old_status} → {req.status.upper()} by {current_staff.id}")
-    return staff
 
 
 @router.patch("/{staff_id}/workload")
@@ -148,62 +123,19 @@ async def increment_workload(
     db: AsyncSession = Depends(get_db)
 ):
     """Adjust a staff member's active patient workload count with row lock."""
-    result = await db.execute(
-        select(Staff).where(Staff.id == staff_id).with_for_update()
+    service = StaffService(db)
+    return await service.adjust_workload(
+        staff_id=staff_id,
+        delta=delta,
+        actor_id=current_staff.id
     )
-    staff = result.scalars().first()
-    if not staff:
-        raise HTTPException(status_code=404, detail=f"Staff member {staff_id} not found")
-
-    old_load = staff.current_workload
-    staff.current_workload = max(0, staff.current_workload + delta)
-
-    # Auto-set BUSY if at max
-    if staff.current_workload >= staff.max_workload:
-        staff.status = "BUSY"
-    elif staff.status == "BUSY" and staff.current_workload < staff.max_workload:
-        staff.status = "AVAILABLE"
-
-    audit = AuditLog(
-        entity_type="staff",
-        entity_id=staff_id,
-        field_changed="workload",
-        old_value=str(old_load),
-        new_value=str(staff.current_workload),
-        changed_by=current_staff.id,
-        change_reason=f"Workload adjusted by delta={delta}"
-    )
-    db.add(audit)
-
-    await db.commit()
-    await db.refresh(staff)
-    logger.info(f"Staff {staff_id} workload: {old_load} → {staff.current_workload} by {current_staff.id}")
-    return {"id": staff.id, "current_workload": staff.current_workload, "status": staff.status}
 
 
 @router.get("/departments/{department_id}/ratios")
 async def get_department_staffing_ratios(department_id: str, db: AsyncSession = Depends(get_db)):
     """Get current nurse:patient and doctor:patient ratios for a department."""
-    doctors = await db.execute(
-        select(Staff).where(Staff.department_id == department_id, Staff.role == "DOCTOR", Staff.status.in_(["AVAILABLE", "BUSY"]))
-    )
-    nurses = await db.execute(
-        select(Staff).where(Staff.department_id == department_id, Staff.role.in_(["NURSE", "CHARGE_NURSE"]), Staff.status.in_(["AVAILABLE", "BUSY"]))
-    )
-
-    doc_list = doctors.scalars().all()
-    nurse_list = nurses.scalars().all()
-
-    total_patients = sum(s.current_workload for s in nurse_list)
-
-    return {
-        "department_id": department_id,
-        "active_doctors": len(doc_list),
-        "active_nurses": len(nurse_list),
-        "total_active_patients": total_patients,
-        "nurse_patient_ratio": f"1:{round(total_patients / max(len(nurse_list), 1))}",
-        "doctor_patient_ratio": f"1:{round(total_patients / max(len(doc_list), 1))}"
-    }
+    service = StaffService(db)
+    return await service.get_department_staffing_ratios(department_id=department_id)
 
 
 # ─── Shifts ─────────────────────────────────────────────────────────────────
@@ -215,13 +147,8 @@ async def list_shifts(
     db: AsyncSession = Depends(get_db)
 ):
     """List staff shift schedules."""
-    query = select(StaffShift)
-    if staff_id:
-        query = query.where(StaffShift.staff_id == staff_id)
-    if shift_type:
-        query = query.where(StaffShift.shift_type == shift_type.upper())
-    result = await db.execute(query)
-    return result.scalars().all()
+    service = StaffService(db)
+    return await service.list_shifts(staff_id=staff_id, shift_type=shift_type)
 
 
 @router.post("/shifts", response_model=StaffShiftResponse, status_code=201)
@@ -231,22 +158,15 @@ async def create_shift(
     db: AsyncSession = Depends(get_db)
 ):
     """Schedule a new shift for a staff member."""
-    res = await db.execute(select(Staff).where(Staff.id == shift_in.staff_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=404, detail=f"Staff {shift_in.staff_id} not found")
-
-    shift = StaffShift(
+    service = StaffService(db)
+    return await service.create_shift(
         staff_id=shift_in.staff_id,
         department_id=shift_in.department_id,
-        shift_type=shift_in.shift_type.upper(),
+        shift_type=shift_in.shift_type,
         start_time=shift_in.start_time,
-        end_time=shift_in.end_time
+        end_time=shift_in.end_time,
+        actor_id=current_staff.id
     )
-    db.add(shift)
-    await db.commit()
-    await db.refresh(shift)
-    logger.info(f"Shift created: {shift.id} for {shift_in.staff_id} ({shift_in.shift_type}) by {current_staff.id}")
-    return shift
 
 
 # ─── Skills ─────────────────────────────────────────────────────────────────
@@ -254,8 +174,8 @@ async def create_shift(
 @router.get("/{staff_id}/skills", response_model=List[StaffSkillResponse])
 async def list_staff_skills(staff_id: str, db: AsyncSession = Depends(get_db)):
     """List all certified skills for a staff member."""
-    result = await db.execute(select(StaffSkill).where(StaffSkill.staff_id == staff_id))
-    return result.scalars().all()
+    service = StaffService(db)
+    return await service.list_staff_skills(staff_id=staff_id)
 
 
 @router.post("/skills", response_model=StaffSkillResponse, status_code=201)
@@ -265,17 +185,9 @@ async def add_staff_skill(
     db: AsyncSession = Depends(get_db)
 ):
     """Register a new certification/skill for a staff member."""
-    res = await db.execute(select(Staff).where(Staff.id == skill_in.staff_id))
-    if not res.scalars().first():
-        raise HTTPException(status_code=404, detail=f"Staff {skill_in.staff_id} not found")
-
-    skill = StaffSkill(
+    service = StaffService(db)
+    return await service.add_staff_skill(
         staff_id=skill_in.staff_id,
         skill_name=skill_in.skill_name,
-        certification_date=datetime.utcnow()
+        actor_id=current_staff.id
     )
-    db.add(skill)
-    await db.commit()
-    await db.refresh(skill)
-    logger.info(f"Skill added: {skill_in.skill_name} for {skill_in.staff_id} by {current_staff.id}")
-    return skill
