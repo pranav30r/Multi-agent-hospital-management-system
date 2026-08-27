@@ -47,11 +47,13 @@ app.add_middleware(
 from app.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
-    InputSanitizationMiddleware
+    InputSanitizationMiddleware,
+    InMemoryRateLimiter
 )
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(InputSanitizationMiddleware)
+app.add_middleware(InMemoryRateLimiter, max_requests=settings.RATE_LIMIT_PER_MINUTE, window_seconds=60)
 
 # Import Routers
 from app.routers import (

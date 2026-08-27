@@ -21,8 +21,8 @@ class InMemoryRateLimiter(BaseHTTPMiddleware):
         self.request_history: Dict[str, List[float]] = defaultdict(list)
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # Whitelist health checks and API docs
-        if request.url.path in ("/health", "/api/v1/health", "/docs", "/redoc", "/openapi.json"):
+        # Whitelist health checks, root metadata, and API docs
+        if request.url.path in ("/", "/health", "/api/v1/health", "/docs", "/redoc", "/openapi.json"):
             return await call_next(request)
 
         client_ip = request.client.host if request.client else "127.0.0.1"

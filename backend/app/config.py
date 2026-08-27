@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # Production API Docs Configuration
     ENABLE_PROD_DOCS: bool = os.getenv("ENABLE_PROD_DOCS", "false").lower() in ["true", "1", "yes"]
 
+    # Security & Rate Limiting
+    RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "300"))
+
     def get_allowed_origins(self) -> List[str]:
         """Parse comma-delimited ALLOWED_ORIGINS string into a clean list of origins."""
         if not self.ALLOWED_ORIGINS:
