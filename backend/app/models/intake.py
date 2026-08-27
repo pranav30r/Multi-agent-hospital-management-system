@@ -4,6 +4,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy import String, Integer, Float, Boolean, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 
 class ClinicalIntakeSession(Base):
@@ -33,7 +34,7 @@ class ClinicalIntakeSession(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     reviewed_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationships
     questions: Mapped[List["IntakeQuestion"]] = relationship("IntakeQuestion", back_populates="session", cascade="all, delete-orphan", order_by="IntakeQuestion.order_index")
@@ -67,7 +68,7 @@ class IntakeQuestion(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_answered: Mapped[bool] = mapped_column(Boolean, default=False)
     is_skipped: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationships
     session: Mapped["ClinicalIntakeSession"] = relationship("ClinicalIntakeSession", back_populates="questions")
@@ -88,7 +89,7 @@ class IntakeResponse(Base):
     raw_response: Mapped[str] = mapped_column(Text, nullable=False)
     structured_value: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     response_type: Mapped[str] = mapped_column(String(30), nullable=False)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationships
     session: Mapped["ClinicalIntakeSession"] = relationship("ClinicalIntakeSession", back_populates="responses")
@@ -118,6 +119,6 @@ class ClinicalAssessment(Base):
     missing_information: Mapped[Optional[dict]] = mapped_column(JSON, default=list)
     generated_summary: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     
-    generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     generated_by: Mapped[str] = mapped_column(String(50), default="SYSTEM")
     version: Mapped[str] = mapped_column(String(20), default="1.0.0")

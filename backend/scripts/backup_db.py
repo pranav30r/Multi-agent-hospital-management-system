@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from sqlalchemy import select
 from app.database import AsyncSessionLocal
+from app.utils.datetime_utils import utc_now, utc_now_iso
 from app.models import (
     Department, Bed, Staff, Equipment, Disease,
     Patient, Encounter, EmergencyEvent, AuditLog, WorkflowDefinition
@@ -16,13 +17,13 @@ from app.models import (
 async def export_hospital_snapshot(output_file: str = None, session_factory=None):
     """Exports all core hospital relational tables into a portable JSON snapshot."""
     if not output_file:
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = utc_now().strftime("%Y%m%d_%H%M%S")
         output_file = f"hospital_snapshot_{timestamp}.json"
 
     factory = session_factory or AsyncSessionLocal
     async with factory() as session:
         snapshot = {
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": utc_now_iso(),
             "version": "1.0.0",
             "departments": [d.__dict__ for d in (await session.execute(select(Department))).scalars().all()],
             "beds": [b.__dict__ for b in (await session.execute(select(Bed))).scalars().all()],

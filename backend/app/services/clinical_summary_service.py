@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from app.utils.datetime_utils import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class ClinicalSummaryService:
         Synthesize a structured clinical pre-consultation summary object for physician review.
         """
         intk = intake_summary or {}
-        now_iso = datetime.utcnow().isoformat()
+        now_iso = utc_now_iso()
 
         # ─── 1. Patient-Reported Section ────────────────────────────────────
         patient_reported = {

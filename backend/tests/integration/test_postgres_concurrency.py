@@ -212,9 +212,10 @@ async def test_03_approval_double_execution_postgres(pg_db):
 
                     await asyncio.sleep(0.05)
 
+                    from app.utils.datetime_utils import utc_now
                     approval.status = "APPROVED" if action == "APPROVE" else "REJECTED"
                     approval.reviewed_by = reviewer_id
-                    approval.reviewed_at = datetime.utcnow()
+                    approval.reviewed_at = utc_now()
 
                 return {"status": "SUCCESS", "reviewer": reviewer_id}
             except Exception as e:

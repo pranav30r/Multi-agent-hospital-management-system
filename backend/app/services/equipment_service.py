@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.equipment import Equipment, EquipmentBooking
 from app.models.agent import AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,7 @@ class EquipmentService:
             raise HTTPException(status_code=400, detail=f"Booking {booking_id} is already completed")
 
         booking.status = "COMPLETED"
-        booking.end_time = datetime.utcnow()
+        booking.end_time = utc_now()
 
         # Atomically lock and release associated equipment
         eq_result = await self.db.execute(

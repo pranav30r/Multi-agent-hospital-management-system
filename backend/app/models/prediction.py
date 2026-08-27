@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Integer, Float, DateTime, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 class PredictionRun(Base):
     __tablename__ = "prediction_runs"
@@ -23,4 +24,4 @@ class PredictionRun(Base):
     recommended_action: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     inference_time_ms: Mapped[Optional[float]] = mapped_column(Float, default=0.0)
     target_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

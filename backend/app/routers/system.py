@@ -9,9 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, engine
 from app.config import settings
+from app.utils.datetime_utils import utc_now
 
 router = APIRouter(prefix="/system", tags=["System Telemetry & Metrics"])
-START_TIME = datetime.utcnow()
+START_TIME = utc_now()
 
 @router.get("/metrics")
 async def get_system_metrics(db: AsyncSession = Depends(get_db)):
@@ -22,7 +23,7 @@ async def get_system_metrics(db: AsyncSession = Depends(get_db)):
     - Database connectivity and pool stats
     - Service uptime
     """
-    uptime_seconds = (datetime.utcnow() - START_TIME).total_seconds()
+    uptime_seconds = (utc_now() - START_TIME).total_seconds()
     
     # Process memory
     process = psutil.Process(os.getpid())

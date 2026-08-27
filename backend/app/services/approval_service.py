@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import ApprovalItem, AgentDecision, AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ class ApprovalService:
         item.status = action_clean
         item.review_action = action_clean
         item.reviewed_by = actor_id
-        item.reviewed_at = datetime.utcnow()
+        item.reviewed_at = utc_now()
 
         if action_clean in ["MODIFY", "MODIFIED"]:
             item.modification = modification
@@ -112,7 +113,7 @@ class ApprovalService:
         decision = res_dec.scalars().first()
         if decision:
             decision.status = action_clean
-            decision.resolved_at = datetime.utcnow()
+            decision.resolved_at = utc_now()
 
         # AuditLog entry within same atomic transaction
         change_reason = f"Human Review ({actor_role}): {action_clean}"
@@ -196,7 +197,7 @@ class ApprovalService:
 
         item.status = "EXPIRED"
         item.review_action = "EXPIRED"
-        item.reviewed_at = datetime.utcnow()
+        item.reviewed_at = utc_now()
 
         res_dec = await self.db.execute(
             select(AgentDecision).where(AgentDecision.id == item.decision_id)
@@ -204,7 +205,7 @@ class ApprovalService:
         decision = res_dec.scalars().first()
         if decision:
             decision.status = "EXPIRED"
-            decision.resolved_at = datetime.utcnow()
+            decision.resolved_at = utc_now()
 
         audit = AuditLog(
             entity_type="approval",

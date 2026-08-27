@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.patient import Patient, Encounter
 from app.models.agent import AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class PatientService:
             emergency_contact=emergency_contact.strip(),
             allergies=allergies or [],
             chronic_conditions=chronic_conditions or [],
-            created_at=datetime.utcnow()
+            created_at=utc_now()
         )
         self.db.add(patient)
         await self.db.flush()

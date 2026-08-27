@@ -11,6 +11,7 @@ from app.models.workflow import (
     Queue, Task
 )
 from app.models.agent import AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +120,7 @@ class WorkflowService:
             patient_id=patient_id,
             current_step_number=1,
             status="ACTIVE",
-            started_at=datetime.utcnow()
+            started_at=utc_now()
         )
         self.db.add(instance)
 
@@ -129,7 +130,7 @@ class WorkflowService:
             step_number=1,
             name=first_step_name,
             status="IN_PROGRESS",
-            started_at=datetime.utcnow()
+            started_at=utc_now()
         )
         self.db.add(step_record)
 
@@ -253,7 +254,7 @@ class WorkflowService:
         current_step = step_res.scalars().first()
         if current_step:
             current_step.status = "COMPLETED"
-            current_step.completed_at = datetime.utcnow()
+            current_step.completed_at = utc_now()
             current_step.assigned_to = actor_id
 
         step_name_display = f"Step {instance.current_step_number}"
@@ -270,13 +271,13 @@ class WorkflowService:
                 step_number=next_step_num,
                 name=next_step_name,
                 status="IN_PROGRESS",
-                started_at=datetime.utcnow()
+                started_at=utc_now()
             )
             self.db.add(next_step_record)
         else:
             # All steps complete
             instance.status = "COMPLETED"
-            instance.completed_at = datetime.utcnow()
+            instance.completed_at = utc_now()
 
         audit = AuditLog(
             entity_type="workflow",
@@ -446,7 +447,7 @@ class WorkflowService:
             raise HTTPException(status_code=400, detail=f"Cannot skip a step in '{step.status}' state")
 
         step.status = "SKIPPED"
-        step.completed_at = datetime.utcnow()
+        step.completed_at = utc_now()
         step.assigned_to = actor_id
 
         audit = AuditLog(
@@ -512,7 +513,7 @@ class WorkflowService:
             position=next_pos,
             status="WAITING",
             estimated_wait_mins=estimated_wait_mins,
-            entered_at=datetime.utcnow()
+            entered_at=utc_now()
         )
         self.db.add(queue_entry)
         await self.db.commit()
@@ -587,7 +588,7 @@ class WorkflowService:
             created_by_agent=created_by_agent,
             priority=priority,
             status="PENDING",
-            created_at=datetime.utcnow()
+            created_at=utc_now()
         )
         self.db.add(task)
         await self.db.commit()
@@ -616,7 +617,7 @@ class WorkflowService:
         if assigned_to_staff_id:
             task.assigned_to_staff_id = assigned_to_staff_id
         if status_clean == "COMPLETED":
-            task.completed_at = datetime.utcnow()
+            task.completed_at = utc_now()
 
         await self.db.commit()
         await self.db.refresh(task)

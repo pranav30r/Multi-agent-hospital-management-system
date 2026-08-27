@@ -1,6 +1,7 @@
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from app.utils.datetime_utils import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class RedFlagService:
         Returns a structured list of detected red-flag findings.
         """
         red_flags: List[Dict[str, Any]] = []
-        now_iso = datetime.utcnow().isoformat()
+        now_iso = utc_now_iso()
 
         # ─── 1. Vital Signs Red Flags ───────────────────────────────────────
         spo2 = encounter_vitals.get("spo2")

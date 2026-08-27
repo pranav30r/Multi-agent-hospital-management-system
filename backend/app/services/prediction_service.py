@@ -11,6 +11,7 @@ from app.models.bed import Bed
 from app.models.patient import Encounter
 from app.models.staff import Staff
 from app.models.agent import AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +81,8 @@ class PredictionService:
             prediction_output=prediction_output,
             recommended_action=recommended_action or prediction_output.get("recommended_action"),
             inference_time_ms=inference_time_ms,
-            target_date=target_date or datetime.utcnow(),
-            created_at=datetime.utcnow()
+            target_date=target_date or utc_now(),
+            created_at=utc_now()
         )
         self.db.add(prediction)
         await self.db.flush()
@@ -200,7 +201,7 @@ class PredictionService:
             predicted_value=predicted_val,
             unit=unit,
             recommended_action=recommendation,
-            target_date=datetime.utcnow() + timedelta(hours=forecast_horizon_hours)
+            target_date=utc_now() + timedelta(hours=forecast_horizon_hours)
         )
 
     # ─── 2. Query & History Operations ──────────────────────────────────────

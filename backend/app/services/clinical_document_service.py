@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.models.clinical_document import ClinicalDocument
 from app.models.patient import Patient, Encounter
 from app.models.agent import AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +86,8 @@ class ClinicalDocumentService:
             metadata_json=metadata_json or {},
             is_verified=False,
             uploaded_by=actor_id,
-            document_date=document_date or datetime.utcnow(),
-            created_at=datetime.utcnow()
+            document_date=document_date or utc_now(),
+            created_at=utc_now()
         )
         self.db.add(doc)
         await self.db.flush()
@@ -165,7 +166,7 @@ class ClinicalDocumentService:
         doc.is_verified = True
         doc.status = "VERIFIED"
         doc.verified_by = verifier_id
-        doc.verified_at = datetime.utcnow()
+        doc.verified_at = utc_now()
         if notes:
             doc.metadata_json = {**(doc.metadata_json or {}), "verification_notes": notes}
 

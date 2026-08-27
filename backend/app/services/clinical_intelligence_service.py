@@ -11,6 +11,7 @@ from app.models.agent import AuditLog
 from app.services.red_flag_service import RedFlagService
 from app.services.clinical_severity_service import ClinicalSeverityService
 from app.services.clinical_summary_service import ClinicalSummaryService
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +160,7 @@ class ClinicalIntelligenceService:
             assessment.supporting_factors = severity_result["supporting_factors"]
             assessment.missing_information = severity_result["missing_information"]
             assessment.generated_summary = generated_summary
-            assessment.generated_at = datetime.utcnow()
+            assessment.generated_at = utc_now()
             assessment.generated_by = actor_id
         else:
             assessment = ClinicalAssessment(
@@ -175,7 +176,7 @@ class ClinicalIntelligenceService:
                 supporting_factors=severity_result["supporting_factors"],
                 missing_information=severity_result["missing_information"],
                 generated_summary=generated_summary,
-                generated_at=datetime.utcnow(),
+                generated_at=utc_now(),
                 generated_by=actor_id,
                 version="1.0.0"
             )

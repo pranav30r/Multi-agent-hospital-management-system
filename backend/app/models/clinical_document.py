@@ -4,6 +4,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 
 class ClinicalDocument(Base):
@@ -36,7 +37,7 @@ class ClinicalDocument(Base):
 
     uploaded_by: Mapped[str] = mapped_column(String, default="SYSTEM")
     document_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationships
     investigations: Mapped[List["ClinicalInvestigation"]] = relationship("ClinicalInvestigation", back_populates="document")
@@ -64,7 +65,7 @@ class ClinicalInvestigation(Base):
     is_abnormal: Mapped[bool] = mapped_column(Boolean, default=False)
     abnormal_flags: Mapped[Optional[dict]] = mapped_column(JSON, default=list)
 
-    ordered_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ordered_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -72,7 +73,7 @@ class ClinicalInvestigation(Base):
     verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     ordered_by: Mapped[str] = mapped_column(String, default="SYSTEM")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationships
     document: Mapped[Optional["ClinicalDocument"]] = relationship("ClinicalDocument", back_populates="investigations")

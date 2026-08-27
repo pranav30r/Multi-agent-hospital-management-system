@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 class Equipment(Base):
     __tablename__ = "equipment"
@@ -18,7 +19,7 @@ class Equipment(Base):
     current_patient_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     current_encounter_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 class EquipmentBooking(Base):
     __tablename__ = "equipment_bookings"
@@ -29,7 +30,7 @@ class EquipmentBooking(Base):
     patient_id: Mapped[str] = mapped_column(String, ForeignKey("patients.id"), nullable=False)
     requested_by: Mapped[str] = mapped_column(String, nullable=False)
     
-    start_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    start_time: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="SCHEDULED")  # SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED
     notes: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)

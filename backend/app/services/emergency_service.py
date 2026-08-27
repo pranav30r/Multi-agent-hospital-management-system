@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.emergency import EmergencyEvent
 from app.models.department import Department
 from app.models.agent import AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ class EmergencyService:
             expected_patient_surge=expected_patient_surge,
             declared_by=actor_id,
             status="ACTIVE",
-            declared_at=datetime.utcnow()
+            declared_at=utc_now()
         )
         self.db.add(emergency)
 
@@ -198,7 +199,7 @@ class EmergencyService:
 
         old_status = emergency.status
         emergency.status = "RESOLVED"
-        emergency.resolved_at = datetime.utcnow()
+        emergency.resolved_at = utc_now()
 
         audit = AuditLog(
             entity_type="emergency",

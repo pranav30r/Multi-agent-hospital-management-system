@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.patient import Patient, Encounter
 from app.models.department import Department
 from app.models.agent import AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +72,8 @@ class EncounterService:
             respiratory_rate=respiratory_rate,
             gcs_score=gcs_score,
             patient_status="REGISTERED",
-            arrival_time=datetime.utcnow(),
-            registration_time=datetime.utcnow()
+            arrival_time=utc_now(),
+            registration_time=utc_now()
         )
         self.db.add(encounter)
         await self.db.flush()
@@ -136,7 +137,7 @@ class EncounterService:
             if field in vitals and vitals[field] is not None:
                 setattr(encounter, field, vitals[field])
 
-        encounter.triage_time = datetime.utcnow()
+        encounter.triage_time = utc_now()
 
         audit = AuditLog(
             entity_type="encounter",
@@ -181,7 +182,7 @@ class EncounterService:
             encounter.current_department_id = current_department_id
         if assigned_doctor_id is not None:
             encounter.assigned_doctor_id = assigned_doctor_id
-            encounter.doctor_assigned_time = datetime.utcnow()
+            encounter.doctor_assigned_time = utc_now()
         if assigned_nurse_id is not None:
             encounter.assigned_nurse_id = assigned_nurse_id
         if current_bed_id is not None:
@@ -239,7 +240,7 @@ class EncounterService:
         old_status = encounter.status
         encounter.status = status_clean
         if status_clean == "COMPLETED":
-            encounter.discharge_time = datetime.utcnow()
+            encounter.discharge_time = utc_now()
             encounter.patient_status = "DISCHARGED"
 
         audit = AuditLog(

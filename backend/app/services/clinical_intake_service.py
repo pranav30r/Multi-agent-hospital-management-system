@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.models.intake import ClinicalIntakeSession, IntakeQuestion, IntakeResponse
 from app.models.patient import Patient, Encounter
 from app.models.agent import AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +72,8 @@ class ClinicalIntakeService:
             language=language.lower() if language else "en",
             interaction_mode=mode_clean,
             chief_complaint_raw=chief_complaint_raw or (encounter.chief_complaint if encounter_id and encounter else None),
-            started_at=datetime.utcnow(),
-            created_at=datetime.utcnow()
+            started_at=utc_now(),
+            created_at=utc_now()
         )
         self.db.add(session)
         await self.db.flush()
@@ -381,7 +382,7 @@ class ClinicalIntakeService:
             raw_response=raw_clean,
             structured_value=parsed_structured,
             response_type=r_type,
-            recorded_at=datetime.utcnow()
+            recorded_at=utc_now()
         )
         self.db.add(response)
 
@@ -555,7 +556,7 @@ class ClinicalIntakeService:
                 structured["past_medical_history"] = resp.raw_response
 
         session.status = "COMPLETED"
-        session.completed_at = datetime.utcnow()
+        session.completed_at = utc_now()
         session.completion_percentage = 100.0
         session.structured_summary = structured
 
@@ -595,7 +596,7 @@ class ClinicalIntakeService:
             raise HTTPException(status_code=400, detail=f"Cannot review an intake session in '{session.status}' state. Must be COMPLETED.")
 
         session.status = "REVIEWED"
-        session.reviewed_at = datetime.utcnow()
+        session.reviewed_at = utc_now()
         session.reviewed_by = reviewer_id
 
         audit = AuditLog(

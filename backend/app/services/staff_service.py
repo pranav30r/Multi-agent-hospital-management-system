@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.staff import Staff, StaffShift, StaffSkill
 from app.models.department import Department
 from app.models.agent import AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ class StaffService:
             max_workload=max_workload,
             skills=skills or [],
             password_hash=password_hash,
-            created_at=datetime.utcnow()
+            created_at=utc_now()
         )
         self.db.add(staff)
 
@@ -484,7 +485,7 @@ class StaffService:
         skill = StaffSkill(
             staff_id=staff_id,
             skill_name=skill_clean,
-            certification_date=datetime.utcnow()
+            certification_date=utc_now()
         )
         self.db.add(skill)
 

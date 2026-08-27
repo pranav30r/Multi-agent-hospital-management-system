@@ -4,6 +4,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy import String, Integer, Float, Boolean, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 
 class ClinicalPriorityRecommendation(Base):
@@ -42,6 +43,6 @@ class ClinicalPriorityRecommendation(Base):
     override_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     generated_by: Mapped[str] = mapped_column(String(50), default="SYSTEM")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     version: Mapped[str] = mapped_column(String(20), default="1.0.0")

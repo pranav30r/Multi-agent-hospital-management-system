@@ -4,6 +4,7 @@ from typing import Optional, List
 from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, Enum as SQLEnum, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 class Patient(Base):
     __tablename__ = "patients"
@@ -20,7 +21,7 @@ class Patient(Base):
     # Clinical History
     allergies: Mapped[Optional[dict]] = mapped_column(JSON, default=list)
     chronic_conditions: Mapped[Optional[dict]] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationships
     encounters: Mapped[List["Encounter"]] = relationship("Encounter", back_populates="patient")
@@ -59,7 +60,7 @@ class Encounter(Base):
     diagnosis_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Timestamps
-    arrival_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    arrival_time: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     registration_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     triage_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     doctor_assigned_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

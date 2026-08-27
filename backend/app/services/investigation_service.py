@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.models.clinical_document import ClinicalInvestigation, ClinicalDocument
 from app.models.patient import Patient, Encounter
 from app.models.agent import AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -90,11 +91,11 @@ class InvestigationService:
             result_values=result_values or {},
             is_abnormal=is_abnormal,
             abnormal_flags=abnormal_flags or [],
-            ordered_at=datetime.utcnow(),
-            completed_at=datetime.utcnow() if init_status == "COMPLETED" else None,
+            ordered_at=utc_now(),
+            completed_at=utc_now() if init_status == "COMPLETED" else None,
             is_verified=False,
             ordered_by=ordered_by,
-            created_at=datetime.utcnow()
+            created_at=utc_now()
         )
         self.db.add(inv)
         await self.db.flush()
@@ -184,7 +185,7 @@ class InvestigationService:
             inv.abnormal_flags = abnormal_flags
 
         inv.status = status.upper().strip()
-        inv.completed_at = datetime.utcnow()
+        inv.completed_at = utc_now()
 
         audit = AuditLog(
             entity_type="clinical_investigation",
@@ -222,7 +223,7 @@ class InvestigationService:
         inv.is_verified = True
         inv.status = "VERIFIED"
         inv.verified_by = verifier_id
-        inv.verified_at = datetime.utcnow()
+        inv.verified_at = utc_now()
         if notes:
             inv.result_summary = f"{inv.result_summary or ''}\n[Verified Note by {verifier_id}]: {notes}".strip()
 

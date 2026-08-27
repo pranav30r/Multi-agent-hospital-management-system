@@ -9,6 +9,7 @@ from app.models.bed import Bed, BedAssignment
 from app.models.department import Department
 from app.models.patient import Encounter
 from app.models.agent import AuditLog
+from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ class BedService:
 
         # 4. Synchronize Encounter status
         encounter.current_bed_id = bed_id
-        encounter.bed_reserved_time = datetime.utcnow()
+        encounter.bed_reserved_time = utc_now()
         encounter.patient_status = "BED_RESERVED"
 
         # 5. Insert BedAssignment record using trusted authenticated staff identity
@@ -147,7 +148,7 @@ class BedService:
             res_enc = await self.db.execute(select(Encounter).where(Encounter.id == bed.current_encounter_id))
             encounter = res_enc.scalars().first()
             if encounter:
-                encounter.bed_occupied_time = datetime.utcnow()
+                encounter.bed_occupied_time = utc_now()
                 encounter.patient_status = "ADMITTED"
 
         # 4. Record AuditLog entry

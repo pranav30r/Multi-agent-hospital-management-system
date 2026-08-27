@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Time, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 class Staff(Base):
     __tablename__ = "staff"
@@ -21,7 +22,7 @@ class Staff(Base):
     skills: Mapped[Optional[dict]] = mapped_column(JSON, default=list)  # ["ICU_CERTIFIED", "VENTILATOR_TRAINED"]
     password_hash: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 class StaffShift(Base):
     __tablename__ = "staff_shifts"

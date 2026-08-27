@@ -2,6 +2,7 @@ from datetime import datetime
 from sqlalchemy import String, Integer, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 class Department(Base):
     __tablename__ = "departments"
@@ -15,4 +16,4 @@ class Department(Base):
     min_doctors: Mapped[int] = mapped_column(Integer, default=1)
     min_nurses: Mapped[int] = mapped_column(Integer, default=2)
     nurse_patient_ratio: Mapped[str] = mapped_column(String(10), default="1:3")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

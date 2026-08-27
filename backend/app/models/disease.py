@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 class Disease(Base):
     __tablename__ = "diseases"
@@ -18,5 +19,5 @@ class Disease(Base):
     requires_isolation: Mapped[bool] = mapped_column(Boolean, default=False)
     
     added_by: Mapped[str] = mapped_column(String, nullable=False, default="REC-001")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
