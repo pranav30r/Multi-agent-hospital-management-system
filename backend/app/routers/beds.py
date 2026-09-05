@@ -60,7 +60,7 @@ async def list_departments(
 ):
     """List all hospital departments and current capacity metrics."""
     service = BedService(db)
-    return await service.list_departments()
+    return await service.list_departments(tenant_id=current_staff.tenant_id)
 
 
 @router.get("/beds", response_model=List[BedResponse])
@@ -72,7 +72,7 @@ async def list_beds(
 ):
     """List hospital beds with optional department and status filters."""
     service = BedService(db)
-    return await service.list_beds(department_id=department_id, bed_status=bed_status)
+    return await service.list_beds(department_id=department_id, bed_status=bed_status, tenant_id=current_staff.tenant_id)
 
 
 @router.post("/beds/book-manual", response_model=BedResponse)
@@ -92,7 +92,8 @@ async def book_bed_manually(
         encounter_id=req.encounter_id,
         actor_id=current_staff.id,
         actor_role=current_staff.role,
-        reason=req.reason
+        reason=req.reason,
+        tenant_id=current_staff.tenant_id
     )
 
 
@@ -110,5 +111,6 @@ async def confirm_patient_in_bed(
     return await service.confirm_patient_arrival(
         bed_id=bed_id,
         actor_id=current_staff.id,
-        actor_role=current_staff.role
+        actor_role=current_staff.role,
+        tenant_id=current_staff.tenant_id
     )

@@ -1,22 +1,20 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 class BedResponse(BaseModel):
     id: str
     department_id: str
-    bed_number: str
     bed_type: str
     status: str
-    is_isolation_capable: bool
-    current_patient_id: Optional[str]
-    current_encounter_id: Optional[str]
-    reserved_at: Optional[datetime]
-    occupied_at: Optional[datetime]
-    last_cleaned_at: Optional[datetime]
+    is_isolation: bool = False
+    has_ventilator: bool = False
+    has_telemetry: bool = False
+    current_patient_id: Optional[str] = None
+    current_encounter_id: Optional[str] = None
+    last_cleaned_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class BedManualBookRequest(BaseModel):
     bed_id: str

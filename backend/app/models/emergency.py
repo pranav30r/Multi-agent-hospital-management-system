@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 from typing import Optional
-from sqlalchemy import String, Integer, DateTime, JSON, Text
+from sqlalchemy import String, Integer, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.utils.datetime_utils import utc_now
@@ -10,6 +10,7 @@ class EmergencyEvent(Base):
     __tablename__ = "emergency_events"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"EMR-{uuid.uuid4().hex[:6].upper()}")
+    tenant_id: Mapped[str] = mapped_column(String(50), ForeignKey("tenants.id"), nullable=False, default="HOSP-DEFAULT", server_default="HOSP-DEFAULT", index=True)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)  # MASS_CASUALTY, PANDEMIC_SURGE, INFRASTRUCTURE_FAILURE, STAFF_CRISIS
     severity: Mapped[str] = mapped_column(String(20), default="HIGH")     # HIGH, CRITICAL
     description: Mapped[str] = mapped_column(Text, nullable=False)

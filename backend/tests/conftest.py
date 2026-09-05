@@ -55,25 +55,20 @@ def event_loop():
 @pytest_asyncio.fixture(scope="function")
 async def test_db():
     """Initializes schema and seeds fresh synthetic data from database seed files for each test run."""
-    def seed_sync(sync_conn):
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with TestingSessionLocal() as session:
         for seed_file in SEED_SQL_FILES:
             file_path = DATABASE_DIR / seed_file
             if file_path.exists():
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read().replace("::jsonb", "")
-                try:
-                    # SQLite DBAPI executescript executes entire multi-statement SQL natively
-                    sync_conn.connection.dbapi_connection.executescript(content)
-                except Exception as e:
-                    # Fallback to standard execution if driver wrapper differs
-                    for statement in content.split(";"):
-                        stmt = statement.strip()
-                        if stmt:
-                            sync_conn.exec_driver_sql(stmt)
-
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(seed_sync)
+                for statement in content.split(";"):
+                    stmt = statement.strip()
+                    if stmt:
+                        await session.execute(text(stmt))
+        await session.commit()
 
     yield TestingSessionLocal
 

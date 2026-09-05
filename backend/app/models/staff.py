@@ -10,6 +10,7 @@ class Staff(Base):
     __tablename__ = "staff"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # DOC-001, NUR-023, TECH-005, REC-001, ADM-001
+    tenant_id: Mapped[str] = mapped_column(String(50), ForeignKey("tenants.id"), nullable=False, default="HOSP-DEFAULT", server_default="HOSP-DEFAULT", index=True)
     first_name: Mapped[str] = mapped_column(String(50), nullable=False)
     last_name: Mapped[str] = mapped_column(String(50), nullable=False)
     role: Mapped[str] = mapped_column(String(30), nullable=False)  # DOCTOR, NURSE, CHARGE_NURSE, TECHNICIAN, RECEPTIONIST, ADMINISTRATOR

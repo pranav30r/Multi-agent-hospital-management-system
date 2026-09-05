@@ -7,7 +7,7 @@ from app.models.department import Department
 from app.models.bed import Bed
 from app.models.staff import Staff
 from app.models.equipment import Equipment
-from app.models.patient import Encounter
+from app.models.patient import Patient, Encounter
 from app.models.agent import ApprovalItem, AgentDecision, AuditLog
 from app.models.emergency import EmergencyEvent
 from app.models.workflow import Queue, Task
@@ -25,18 +25,24 @@ class DashboardService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_hospital_state(self) -> Dict[str, Any]:
+    async def get_hospital_state(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Produce a unified real-time operational state snapshot for the hospital command center.
         """
         # 1. Departments
-        dept_result = await self.db.execute(select(Department))
+        dept_stmt = select(Department)
+        if tenant_id:
+            dept_stmt = dept_stmt.where(Department.tenant_id == tenant_id)
+        dept_result = await self.db.execute(dept_stmt)
         departments = dept_result.scalars().all()
         icu_dept_ids = {d.id for d in departments if d.code == "ICU"}
         er_dept_ids = {d.id for d in departments if d.code == "ER"}
 
         # 2. Beds
-        beds_result = await self.db.execute(select(Bed))
+        beds_stmt = select(Bed)
+        if tenant_id:
+            beds_stmt = beds_stmt.join(Department, Bed.department_id == Department.id).where(Department.tenant_id == tenant_id)
+        beds_result = await self.db.execute(beds_stmt)
         all_beds = beds_result.scalars().all()
         bed_counts = {"AVAILABLE": 0, "RESERVED": 0, "OCCUPIED": 0, "CLEANING": 0, "MAINTENANCE": 0, "BLOCKED": 0}
         for b in all_beds:
@@ -50,7 +56,10 @@ class DashboardService:
         er_occupied = sum(1 for b in er_beds if b.status in ("OCCUPIED", "RESERVED"))
 
         # 3. Staff
-        staff_result = await self.db.execute(select(Staff))
+        staff_stmt = select(Staff)
+        if tenant_id:
+            staff_stmt = staff_stmt.where(Staff.tenant_id == tenant_id)
+        staff_result = await self.db.execute(staff_stmt)
         all_staff = staff_result.scalars().all()
         staff_available = sum(1 for s in all_staff if s.status == "AVAILABLE")
         staff_busy = sum(1 for s in all_staff if s.status == "BUSY")
@@ -58,13 +67,19 @@ class DashboardService:
         nurses_on = sum(1 for s in all_staff if s.role in ("NURSE", "CHARGE_NURSE") and s.status in ("AVAILABLE", "BUSY"))
 
         # 4. Equipment
-        eq_result = await self.db.execute(select(Equipment))
+        eq_stmt = select(Equipment)
+        if tenant_id:
+            eq_stmt = eq_stmt.join(Department, Equipment.department_id == Department.id).where(Department.tenant_id == tenant_id)
+        eq_result = await self.db.execute(eq_stmt)
         all_eq = eq_result.scalars().all()
         eq_available = sum(1 for e in all_eq if e.status == "AVAILABLE")
         eq_in_use = sum(1 for e in all_eq if e.status == "IN_USE")
 
         # 5. Active Encounters
-        enc_result = await self.db.execute(select(Encounter).where(Encounter.status == "ACTIVE"))
+        enc_stmt = select(Encounter).where(Encounter.status == "ACTIVE")
+        if tenant_id:
+            enc_stmt = enc_stmt.join(Patient, Encounter.patient_id == Patient.id).where(Patient.tenant_id == tenant_id)
+        enc_result = await self.db.execute(enc_stmt)
         active_encounters = enc_result.scalars().all()
 
         # 6. Approvals
@@ -72,7 +87,10 @@ class DashboardService:
         pending_approvals = apr_result.scalars().all()
 
         # 7. Emergencies
-        emr_result = await self.db.execute(select(EmergencyEvent).where(EmergencyEvent.status.in_(["ACTIVE", "ESCALATED"])))
+        emr_stmt = select(EmergencyEvent).where(EmergencyEvent.status.in_(["ACTIVE", "ESCALATED"]))
+        if tenant_id:
+            emr_stmt = emr_stmt.where(EmergencyEvent.tenant_id == tenant_id)
+        emr_result = await self.db.execute(emr_stmt)
         active_emergencies = emr_result.scalars().all()
 
         # 8. Agent Performance
@@ -83,7 +101,10 @@ class DashboardService:
         acceptance_rate = round((approved_decisions / max(total_decisions, 1)) * 100, 1)
 
         # 9. Audit Entries
-        audit_count_result = await self.db.execute(select(func.count(AuditLog.id)))
+        audit_stmt = select(func.count(AuditLog.id))
+        if tenant_id:
+            audit_stmt = audit_stmt.where(AuditLog.tenant_id == tenant_id)
+        audit_count_result = await self.db.execute(audit_stmt)
         audit_count = audit_count_result.scalar() or 0
 
         # 10. Clinical Priorities
@@ -162,17 +183,26 @@ class DashboardService:
             "audit_log_entries": audit_count,
         }
 
-    async def get_departments_summary(self) -> List[Dict[str, Any]]:
+    async def get_departments_summary(self, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Calculate per-department summary with capacity metrics, bed occupancy, and staffing adequacy.
         """
-        dept_result = await self.db.execute(select(Department))
+        dept_stmt = select(Department)
+        if tenant_id:
+            dept_stmt = dept_stmt.where(Department.tenant_id == tenant_id)
+        dept_result = await self.db.execute(dept_stmt)
         departments = dept_result.scalars().all()
 
-        beds_result = await self.db.execute(select(Bed))
+        beds_stmt = select(Bed)
+        if tenant_id:
+            beds_stmt = beds_stmt.join(Department, Bed.department_id == Department.id).where(Department.tenant_id == tenant_id)
+        beds_result = await self.db.execute(beds_stmt)
         all_beds = beds_result.scalars().all()
 
-        staff_result = await self.db.execute(select(Staff).where(Staff.status.in_(["AVAILABLE", "BUSY"])))
+        staff_stmt = select(Staff).where(Staff.status.in_(["AVAILABLE", "BUSY"]))
+        if tenant_id:
+            staff_stmt = staff_stmt.where(Staff.tenant_id == tenant_id)
+        staff_result = await self.db.execute(staff_stmt)
         active_staff = staff_result.scalars().all()
 
         summaries = []
@@ -256,11 +286,11 @@ class DashboardService:
             "active_emergencies": len(affecting_emrs)
         }
 
-    async def get_command_center_telemetry(self) -> Dict[str, Any]:
+    async def get_command_center_telemetry(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Aggregated top-level telemetry including hospital overview, live queues, tasks, and latest predictions.
         """
-        hospital_state = await self.get_hospital_state()
+        hospital_state = await self.get_hospital_state(tenant_id=tenant_id)
 
         # Queues
         q_res = await self.db.execute(select(Queue).where(Queue.status == "WAITING"))

@@ -23,7 +23,7 @@ async def get_hospital_state(
     Designed to be polled every 2-3 seconds for near-real-time updates.
     """
     service = DashboardService(db)
-    return await service.get_hospital_state()
+    return await service.get_hospital_state(tenant_id=current_staff.tenant_id)
 
 
 @router.get("/departments/summary")
@@ -33,7 +33,7 @@ async def get_departments_summary(
 ):
     """Get per-department summary with bed utilization and staffing data."""
     service = DashboardService(db)
-    return await service.get_departments_summary()
+    return await service.get_departments_summary(tenant_id=current_staff.tenant_id)
 
 
 @router.get("/departments/{department_id}")
@@ -54,4 +54,4 @@ async def get_command_center_telemetry(
 ):
     """Get aggregated top-level telemetry including hospital overview, live queues, tasks, and latest predictions."""
     service = DashboardService(db)
-    return await service.get_command_center_telemetry()
+    return await service.get_command_center_telemetry(tenant_id=current_staff.tenant_id)

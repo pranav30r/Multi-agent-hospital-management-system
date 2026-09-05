@@ -1,4 +1,6 @@
+from app.models.tenant import Tenant
 from app.models.patient import Patient, Encounter
+from app.models.observation import ClinicalObservation
 from app.models.intake import ClinicalIntakeSession, IntakeQuestion, IntakeResponse, ClinicalAssessment
 from app.models.clinical_document import ClinicalDocument, ClinicalInvestigation
 from app.models.priority import ClinicalPriorityRecommendation
@@ -19,8 +21,10 @@ from app.models.agent import (
 )
 
 __all__ = [
+    "Tenant",
     "Patient",
     "Encounter",
+    "ClinicalObservation",
     "ClinicalIntakeSession",
     "IntakeQuestion",
     "IntakeResponse",

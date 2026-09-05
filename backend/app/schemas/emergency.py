@@ -1,10 +1,10 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 class EmergencyDeclareRequest(BaseModel):
-    name: str = Field(..., example="Mass Casualty Incident - Highway Accident")
-    emergency_type: str = Field(..., example="MASS_CASUALTY")
+    name: str = Field(..., description="Emergency Event Name")
+    emergency_type: str = Field(..., description="Type (MASS_CASUALTY, PANDEMIC_SURGE, etc.)")
     declared_by: Optional[str] = None
     affected_departments: List[str] = Field(default_factory=list)
     notes: Optional[str] = None
@@ -21,29 +21,27 @@ class EmergencyResponse(BaseModel):
     affected_departments: List[str]
     notes: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ApprovalItemResponse(BaseModel):
     id: str
     decision_id: str
     agent_id: str
     recommendation_type: str
-    patient_id: Optional[str]
-    encounter_id: Optional[str]
+    patient_id: Optional[str] = None
+    encounter_id: Optional[str] = None
     risk_level: str
     proposed_payload: Dict[str, Any]
     status: str
-    human_notes: Optional[str]
-    reviewed_by: Optional[str]
-    reviewed_at: Optional[datetime]
+    human_notes: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ApprovalReviewRequest(BaseModel):
-    action: str = Field(..., example="APPROVE")  # APPROVE, MODIFY, REJECT
+    action: str = Field(..., description="APPROVE, MODIFY, REJECT")
     reviewed_by: Optional[str] = None
     modified_payload: Optional[Dict[str, Any]] = None
     notes: Optional[str] = None

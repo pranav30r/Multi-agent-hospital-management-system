@@ -86,7 +86,7 @@ async def list_staff(
 ):
     """List all hospital staff with optional filters."""
     service = StaffService(db)
-    return await service.list_staff(role=role, department_id=department_id, status=status)
+    return await service.list_staff(role=role, department_id=department_id, status=status, tenant_id=current_staff.tenant_id)
 
 
 @router.get("/{staff_id}", response_model=StaffResponse)
@@ -97,7 +97,7 @@ async def get_staff_member(
 ):
     """Get detailed information for a specific staff member."""
     service = StaffService(db)
-    staff = await service.get_staff_by_id(staff_id)
+    staff = await service.get_staff_by_id(staff_id, tenant_id=current_staff.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail=f"Staff member {staff_id} not found")
     return staff

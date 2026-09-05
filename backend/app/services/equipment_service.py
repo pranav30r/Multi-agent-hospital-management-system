@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.equipment import Equipment, EquipmentBooking
+from app.models.department import Department
 from app.models.agent import AuditLog
 from app.utils.datetime_utils import utc_now
 
@@ -24,10 +25,13 @@ class EquipmentService:
         self,
         resource_type: Optional[str] = None,
         department_id: Optional[str] = None,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        tenant_id: Optional[str] = None
     ) -> List[Equipment]:
-        """Query equipment with optional resource type, department, and status filters."""
+        """Query equipment with optional resource type, department, status, and tenant filters."""
         query = select(Equipment)
+        if tenant_id:
+            query = query.join(Department, Equipment.department_id == Department.id).where(Department.tenant_id == tenant_id)
         if resource_type:
             query = query.where(Equipment.resource_type == resource_type.upper())
         if department_id:
@@ -37,9 +41,12 @@ class EquipmentService:
         result = await self.db.execute(query.order_by(Equipment.resource_type, Equipment.id))
         return result.scalars().all()
 
-    async def get_equipment_by_id(self, equipment_id: str) -> Optional[Equipment]:
-        """Fetch equipment details by ID."""
-        result = await self.db.execute(select(Equipment).where(Equipment.id == equipment_id))
+    async def get_equipment_by_id(self, equipment_id: str, tenant_id: Optional[str] = None) -> Optional[Equipment]:
+        """Fetch equipment details by ID with optional tenant isolation."""
+        query = select(Equipment).where(Equipment.id == equipment_id)
+        if tenant_id:
+            query = query.join(Department, Equipment.department_id == Department.id).where(Department.tenant_id == tenant_id)
+        result = await self.db.execute(query)
         return result.scalars().first()
 
     async def update_equipment_status(
@@ -47,15 +54,17 @@ class EquipmentService:
         equipment_id: str,
         status: str,
         reason: str,
-        actor_id: str
+        actor_id: str,
+        tenant_id: Optional[str] = None
     ) -> Equipment:
         """
         Update equipment operational status with pessimistic row-level lock.
         State transition: e.g. AVAILABLE -> MAINTENANCE, MAINTENANCE -> AVAILABLE
         """
-        result = await self.db.execute(
-            select(Equipment).where(Equipment.id == equipment_id).with_for_update()
-        )
+        query = select(Equipment).where(Equipment.id == equipment_id)
+        if tenant_id:
+            query = query.join(Department, Equipment.department_id == Department.id).where(Department.tenant_id == tenant_id)
+        result = await self.db.execute(query.with_for_update())
         eq = result.scalars().first()
         if not eq:
             raise HTTPException(status_code=404, detail=f"Equipment {equipment_id} not found")
@@ -68,6 +77,7 @@ class EquipmentService:
             eq.current_encounter_id = None
 
         audit = AuditLog(
+            tenant_id=tenant_id or "HOSP-DEFAULT",
             entity_type="equipment",
             entity_id=equipment_id,
             field_changed="status",
@@ -89,15 +99,17 @@ class EquipmentService:
         encounter_id: str,
         patient_id: str,
         notes: Optional[str],
-        actor_id: str
+        actor_id: str,
+        tenant_id: Optional[str] = None
     ) -> EquipmentBooking:
         """
         Atomically book a medical equipment resource for an encounter with pessimistic row lock.
         State transition: AVAILABLE -> IN_USE
         """
-        result = await self.db.execute(
-            select(Equipment).where(Equipment.id == equipment_id).with_for_update()
-        )
+        query = select(Equipment).where(Equipment.id == equipment_id)
+        if tenant_id:
+            query = query.join(Department, Equipment.department_id == Department.id).where(Department.tenant_id == tenant_id)
+        result = await self.db.execute(query.with_for_update())
         eq = result.scalars().first()
         if not eq:
             raise HTTPException(status_code=404, detail=f"Equipment {equipment_id} not found")
@@ -122,6 +134,7 @@ class EquipmentService:
         self.db.add(booking)
 
         audit = AuditLog(
+            tenant_id=tenant_id or "HOSP-DEFAULT",
             entity_type="equipment",
             entity_id=equipment_id,
             field_changed="status",

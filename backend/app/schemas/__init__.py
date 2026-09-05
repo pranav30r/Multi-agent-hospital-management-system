@@ -5,6 +5,10 @@ from app.schemas.equipment import EquipmentResponse, EquipmentBookingCreate, Equ
 from app.schemas.disease import DiseaseResponse, DiseaseCreate
 from app.schemas.emergency import EmergencyDeclareRequest, EmergencyResponse, ApprovalItemResponse, ApprovalReviewRequest
 from app.schemas.auth import TokenResponse, LoginRequest, StaffRegisterRequest
+from app.schemas.observation import (
+    ObservationCreate, ObservationResponse, ObservationBatchCreate,
+    ObservationCorrectionRequest, LatestVitalsResponse
+)
 
 __all__ = [
     "PatientCreate", "PatientResponse", "EncounterCreate", "EncounterResponse",
@@ -13,5 +17,7 @@ __all__ = [
     "EquipmentResponse", "EquipmentBookingCreate", "EquipmentBookingResponse",
     "DiseaseResponse", "DiseaseCreate",
     "EmergencyDeclareRequest", "EmergencyResponse", "ApprovalItemResponse", "ApprovalReviewRequest",
-    "TokenResponse", "LoginRequest", "StaffRegisterRequest"
+    "TokenResponse", "LoginRequest", "StaffRegisterRequest",
+    "ObservationCreate", "ObservationResponse", "ObservationBatchCreate",
+    "ObservationCorrectionRequest", "LatestVitalsResponse"
 ]

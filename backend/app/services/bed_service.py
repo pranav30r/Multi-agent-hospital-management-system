@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bed import Bed, BedAssignment
 from app.models.department import Department
-from app.models.patient import Encounter
+from app.models.patient import Patient, Encounter
 from app.models.agent import AuditLog
 from app.utils.datetime_utils import utc_now
 
@@ -22,18 +22,24 @@ class BedService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def list_departments(self) -> List[Department]:
+    async def list_departments(self, tenant_id: Optional[str] = None) -> List[Department]:
         """Query all hospital departments and current capacity metrics."""
-        res = await self.db.execute(select(Department))
+        query = select(Department)
+        if tenant_id:
+            query = query.where(Department.tenant_id == tenant_id)
+        res = await self.db.execute(query)
         return res.scalars().all()
 
     async def list_beds(
         self,
         department_id: Optional[str] = None,
-        bed_status: Optional[str] = None
+        bed_status: Optional[str] = None,
+        tenant_id: Optional[str] = None
     ) -> List[Bed]:
-        """Query hospital beds with optional department and status filters."""
+        """Query hospital beds with optional department, status, and tenant filters."""
         query = select(Bed)
+        if tenant_id:
+            query = query.join(Department, Bed.department_id == Department.id).where(Department.tenant_id == tenant_id)
         if department_id:
             query = query.where(Bed.department_id == department_id)
         if bed_status:
@@ -41,9 +47,12 @@ class BedService:
         res = await self.db.execute(query)
         return res.scalars().all()
 
-    async def get_bed_by_id(self, bed_id: str) -> Optional[Bed]:
+    async def get_bed_by_id(self, bed_id: str, tenant_id: Optional[str] = None) -> Optional[Bed]:
         """Fetch a bed by its unique identifier."""
-        res = await self.db.execute(select(Bed).where(Bed.id == bed_id))
+        query = select(Bed).where(Bed.id == bed_id)
+        if tenant_id:
+            query = query.join(Department, Bed.department_id == Department.id).where(Department.tenant_id == tenant_id)
+        res = await self.db.execute(query)
         return res.scalars().first()
 
     async def reserve_bed(
@@ -53,7 +62,8 @@ class BedService:
         encounter_id: str,
         actor_id: str,
         actor_role: str,
-        reason: str = "Direct clinician assignment"
+        reason: str = "Direct clinician assignment",
+        tenant_id: Optional[str] = None
     ) -> Bed:
         """
         Atomically reserve an AVAILABLE bed for a patient encounter.
@@ -61,9 +71,10 @@ class BedService:
         State transition: AVAILABLE -> RESERVED
         """
         # 1. Pessimistic Row Lock on target Bed
-        res_bed = await self.db.execute(
-            select(Bed).where(Bed.id == bed_id).with_for_update()
-        )
+        bed_query = select(Bed).where(Bed.id == bed_id)
+        if tenant_id:
+            bed_query = bed_query.join(Department, Bed.department_id == Department.id).where(Department.tenant_id == tenant_id)
+        res_bed = await self.db.execute(bed_query.with_for_update())
         bed = res_bed.scalars().first()
         if not bed:
             raise HTTPException(status_code=404, detail="Bed not found")
@@ -74,7 +85,10 @@ class BedService:
             )
 
         # 2. Verify Encounter existence
-        res_enc = await self.db.execute(select(Encounter).where(Encounter.id == encounter_id))
+        enc_query = select(Encounter).where(Encounter.id == encounter_id)
+        if tenant_id:
+            enc_query = enc_query.join(Patient, Encounter.patient_id == Patient.id).where(Patient.tenant_id == tenant_id)
+        res_enc = await self.db.execute(enc_query)
         encounter = res_enc.scalars().first()
         if not encounter:
             raise HTTPException(status_code=404, detail="Encounter not found")
@@ -103,6 +117,7 @@ class BedService:
 
         # 6. Record immutable AuditLog entry within the same transaction
         audit = AuditLog(
+            tenant_id=tenant_id or "HOSP-DEFAULT",
             entity_type="bed",
             entity_id=bed_id,
             field_changed="status",
@@ -123,16 +138,18 @@ class BedService:
         self,
         bed_id: str,
         actor_id: str,
-        actor_role: str
+        actor_role: str,
+        tenant_id: Optional[str] = None
     ) -> Bed:
         """
         Confirms physical arrival of patient at the reserved bed with row-level lock.
         State transition: RESERVED -> OCCUPIED
         """
         # 1. Pessimistic Row Lock on target Bed
-        res_bed = await self.db.execute(
-            select(Bed).where(Bed.id == bed_id).with_for_update()
-        )
+        bed_query = select(Bed).where(Bed.id == bed_id)
+        if tenant_id:
+            bed_query = bed_query.join(Department, Bed.department_id == Department.id).where(Department.tenant_id == tenant_id)
+        res_bed = await self.db.execute(bed_query.with_for_update())
         bed = res_bed.scalars().first()
         if not bed:
             raise HTTPException(status_code=404, detail="Bed not found")

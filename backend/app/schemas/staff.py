@@ -1,22 +1,22 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 class StaffResponse(BaseModel):
     id: str
+    tenant_id: str = "HOSP-DEFAULT"
     first_name: str
     last_name: str
     role: str
     department_id: str
-    specialization: Optional[str]
+    specialization: Optional[str] = None
     status: str
     current_workload: int
     max_workload: int
-    skills: Optional[list]
+    skills: Optional[list] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class StaffStatusUpdate(BaseModel):
     status: str
@@ -32,5 +32,4 @@ class StaffShiftResponse(BaseModel):
     end_time: str
     status: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

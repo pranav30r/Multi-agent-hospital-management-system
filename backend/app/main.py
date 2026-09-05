@@ -63,12 +63,13 @@ app.add_middleware(
 from app.routers import (
     auth, patients, beds, diseases, emergencies, approvals,
     staff, equipment, audit, dashboard, workflows, predictions, system, events, intake, intelligence,
-    documents, investigations, clinical_priority
+    documents, investigations, clinical_priority, observations
 )
 
 # Include REST Routers under API V1 Prefix
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(patients.router, prefix=settings.API_V1_STR)
+app.include_router(observations.router, prefix=settings.API_V1_STR)
 app.include_router(intake.router, prefix=settings.API_V1_STR)
 app.include_router(intelligence.router, prefix=settings.API_V1_STR)
 app.include_router(clinical_priority.router, prefix=settings.API_V1_STR)

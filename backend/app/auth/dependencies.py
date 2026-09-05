@@ -78,3 +78,16 @@ async def get_optional_staff(
         return None
     result = await db.execute(select(Staff).where(Staff.id == payload.get("sub")))
     return result.scalars().first()
+
+
+async def get_current_tenant(
+    payload: dict = Depends(get_current_user_token)
+) -> str:
+    """
+    Extracts verified tenant context from JWT claims.
+    Server-side identity boundary; client-provided tenant headers/bodies are not trusted.
+    """
+    tenant_id = payload.get("tenant_id")
+    if not tenant_id:
+        return "HOSP-DEFAULT"
+    return tenant_id

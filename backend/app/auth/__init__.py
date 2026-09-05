@@ -1,5 +1,5 @@
 from app.auth.security import verify_password, get_password_hash, create_access_token, decode_access_token
-from app.auth.dependencies import get_current_staff, require_roles, get_optional_staff
+from app.auth.dependencies import get_current_staff, require_roles, get_optional_staff, get_current_tenant
 
 __all__ = [
     "verify_password",
@@ -8,5 +8,6 @@ __all__ = [
     "decode_access_token",
     "get_current_staff",
     "require_roles",
-    "get_optional_staff"
+    "get_optional_staff",
+    "get_current_tenant"
 ]

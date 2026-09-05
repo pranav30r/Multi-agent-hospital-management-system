@@ -119,6 +119,7 @@ class AuditLog(Base):
     __tablename__ = "audit_log"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"AUD-{uuid.uuid4().hex[:6].upper()}")
+    tenant_id: Mapped[str] = mapped_column(String(50), ForeignKey("tenants.id"), nullable=False, default="HOSP-DEFAULT", server_default="HOSP-DEFAULT", index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     entity_type: Mapped[str] = mapped_column(String(30), nullable=False)  # patient, bed, staff, resource
     entity_id: Mapped[str] = mapped_column(String, nullable=False)

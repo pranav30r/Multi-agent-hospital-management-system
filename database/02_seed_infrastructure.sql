@@ -4,17 +4,22 @@
 -- Target Engine: PostgreSQL 15+ / ACID Relational SQL
 -- ============================================================================
 
+-- 0. TENANTS (Root Facility Boundary)
+INSERT INTO tenants (id, name, code, description, is_active, timezone, created_at, updated_at) VALUES
+('HOSP-DEFAULT', 'City Hospital Nagpur', 'CHN', 'Primary Hospital Facility', true, 'UTC', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO NOTHING;
+
 -- 1. DEPARTMENTS (9 Facilities)
-INSERT INTO departments (id, name, code, total_beds, current_occupancy, min_doctors, min_nurses, nurse_patient_ratio, created_at) VALUES
-('DEP-ER', 'Emergency Department', 'ER', 6, 0, 2, 3, '1:3', CURRENT_TIMESTAMP),
-('DEP-ICU', 'Intensive Care Unit', 'ICU', 8, 0, 2, 4, '1:2', CURRENT_TIMESTAMP),
-('DEP-WA', 'General Ward A', 'WA', 10, 0, 1, 2, '1:5', CURRENT_TIMESTAMP),
-('DEP-WB', 'General Ward B', 'WB', 10, 0, 1, 2, '1:5', CURRENT_TIMESTAMP),
-('DEP-CAR', 'Cardiology Department', 'CAR', 6, 0, 1, 2, '1:3', CURRENT_TIMESTAMP),
-('DEP-ISO', 'Isolation Unit', 'ISO', 4, 0, 1, 2, '1:2', CURRENT_TIMESTAMP),
-('DEP-RAD', 'Radiology Department', 'RAD', 0, 0, 1, 1, '1:5', CURRENT_TIMESTAMP),
-('DEP-LAB', 'Laboratory Department', 'LAB', 0, 0, 0, 0, '1:5', CURRENT_TIMESTAMP),
-('DEP-SUR', 'Surgery Department', 'SUR', 0, 0, 2, 2, '1:2', CURRENT_TIMESTAMP)
+INSERT INTO departments (id, tenant_id, name, code, total_beds, current_occupancy, min_doctors, min_nurses, nurse_patient_ratio, created_at) VALUES
+('DEP-ER', 'HOSP-DEFAULT', 'Emergency Department', 'ER', 6, 0, 2, 3, '1:3', CURRENT_TIMESTAMP),
+('DEP-ICU', 'HOSP-DEFAULT', 'Intensive Care Unit', 'ICU', 8, 0, 2, 4, '1:2', CURRENT_TIMESTAMP),
+('DEP-WA', 'HOSP-DEFAULT', 'General Ward A', 'WA', 10, 0, 1, 2, '1:5', CURRENT_TIMESTAMP),
+('DEP-WB', 'HOSP-DEFAULT', 'General Ward B', 'WB', 10, 0, 1, 2, '1:5', CURRENT_TIMESTAMP),
+('DEP-CAR', 'HOSP-DEFAULT', 'Cardiology Department', 'CAR', 6, 0, 1, 2, '1:3', CURRENT_TIMESTAMP),
+('DEP-ISO', 'HOSP-DEFAULT', 'Isolation Unit', 'ISO', 4, 0, 1, 2, '1:2', CURRENT_TIMESTAMP),
+('DEP-RAD', 'HOSP-DEFAULT', 'Radiology Department', 'RAD', 0, 0, 1, 1, '1:5', CURRENT_TIMESTAMP),
+('DEP-LAB', 'HOSP-DEFAULT', 'Laboratory Department', 'LAB', 0, 0, 0, 0, '1:5', CURRENT_TIMESTAMP),
+('DEP-SUR', 'HOSP-DEFAULT', 'Surgery Department', 'SUR', 0, 0, 2, 2, '1:2', CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. BEDS (44 Total Beds across 6 Inpatient Units)

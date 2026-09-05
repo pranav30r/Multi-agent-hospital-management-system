@@ -32,21 +32,25 @@ class EmergencyService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def list_active_emergencies(self) -> List[EmergencyEvent]:
+    async def list_active_emergencies(self, tenant_id: Optional[str] = None) -> List[EmergencyEvent]:
         """Query all currently active or escalated hospital emergency events."""
-        res = await self.db.execute(
-            select(EmergencyEvent).where(EmergencyEvent.status.in_(["ACTIVE", "ESCALATED"]))
-        )
+        query = select(EmergencyEvent).where(EmergencyEvent.status.in_(["ACTIVE", "ESCALATED"]))
+        if tenant_id:
+            query = query.where(EmergencyEvent.tenant_id == tenant_id)
+        res = await self.db.execute(query)
         return res.scalars().all()
 
-    async def get_emergency_by_id(self, emergency_id: str) -> Optional[EmergencyEvent]:
+    async def get_emergency_by_id(self, emergency_id: str, tenant_id: Optional[str] = None) -> Optional[EmergencyEvent]:
         """Fetch an emergency event by its unique ID."""
-        res = await self.db.execute(select(EmergencyEvent).where(EmergencyEvent.id == emergency_id))
+        query = select(EmergencyEvent).where(EmergencyEvent.id == emergency_id)
+        if tenant_id:
+            query = query.where(EmergencyEvent.tenant_id == tenant_id)
+        res = await self.db.execute(query)
         return res.scalars().first()
 
-    async def get_affected_departments(self) -> List[str]:
+    async def get_affected_departments(self, tenant_id: Optional[str] = None) -> List[str]:
         """Get unique list of department IDs affected across all active emergencies."""
-        active_events = await self.list_active_emergencies()
+        active_events = await self.list_active_emergencies(tenant_id=tenant_id)
         affected: Set[str] = set()
         for ev in active_events:
             if isinstance(ev.affected_departments, list):

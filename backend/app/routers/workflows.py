@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -23,8 +23,7 @@ class WorkflowDefinitionResponse(BaseModel):
     steps_json: List[Dict[str, Any]]
     is_active: bool = True
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkflowInstanceCreate(BaseModel):
@@ -44,8 +43,7 @@ class WorkflowInstanceResponse(BaseModel):
     started_at: datetime
     completed_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StepAdvanceRequest(BaseModel):
@@ -59,8 +57,7 @@ class QueueResponse(BaseModel):
     current_depth: int
     estimated_wait_mins: float
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskResponse(BaseModel):
@@ -71,8 +68,7 @@ class TaskResponse(BaseModel):
     status: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── Workflow Definition Endpoints ──────────────────────────────────────────

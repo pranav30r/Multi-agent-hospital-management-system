@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
-from app.auth.dependencies import require_roles, get_current_staff
+from app.auth.dependencies import require_roles, get_current_staff, get_current_tenant
 from app.schemas.patient import PatientCreate, PatientResponse, EncounterCreate, EncounterResponse
 from app.services.patient_service import PatientService
 from app.services.encounter_service import EncounterService
@@ -20,9 +20,10 @@ router = APIRouter(prefix="/patients", tags=["Patients & Intake"])
 async def create_patient(
     patient_in: PatientCreate,
     current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "NURSE", "CHARGE_NURSE", "RECEPTIONIST"])),
+    tenant_id: str = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db)
 ):
-    """Register a new patient in the hospital system with RBAC enforcement."""
+    """Register a new patient in the hospital system with RBAC & tenant enforcement."""
     service = PatientService(db)
     return await service.register_patient(
         first_name=patient_in.first_name,
@@ -32,10 +33,11 @@ async def create_patient(
         blood_group=patient_in.blood_group,
         contact_phone=patient_in.contact_phone,
         emergency_contact=patient_in.emergency_contact,
-        allergies=patient_in.allergies,
-        chronic_conditions=patient_in.chronic_conditions,
         actor_id=current_staff.id,
-        actor_role=current_staff.role
+        actor_role=current_staff.role,
+        tenant_id=tenant_id,
+        allergies=patient_in.allergies,
+        chronic_conditions=patient_in.chronic_conditions
     )
 
 
@@ -45,24 +47,26 @@ async def list_patients(
     limit: int = Query(50, ge=1, le=100),
     search: Optional[str] = Query(None, description="Search by name, phone, or ID"),
     current_staff: Staff = Depends(get_current_staff),
+    tenant_id: str = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all registered patients with optional pagination and search."""
+    """List all registered patients for the authenticated hospital tenant."""
     service = PatientService(db)
     if search:
-        return await service.search_patients(query_str=search, limit=limit)
-    return await service.list_patients(skip=skip, limit=limit)
+        return await service.search_patients(query_str=search, limit=limit, tenant_id=tenant_id)
+    return await service.list_patients(skip=skip, limit=limit, tenant_id=tenant_id)
 
 
 @router.get("/{patient_id}", response_model=PatientResponse)
 async def get_patient(
     patient_id: str,
     current_staff: Staff = Depends(get_current_staff),
+    tenant_id: str = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get patient details by ID."""
+    """Get patient details by ID within authenticated tenant boundary."""
     service = PatientService(db)
-    patient = await service.get_patient_by_id(patient_id)
+    patient = await service.get_patient_by_id(patient_id, tenant_id=tenant_id)
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
     return patient
@@ -72,11 +76,12 @@ async def get_patient(
 async def get_patient_history(
     patient_id: str,
     current_staff: Staff = Depends(get_current_staff),
+    tenant_id: str = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieve full chronological hospital encounter history for a patient."""
     service = PatientService(db)
-    return await service.get_patient_history(patient_id)
+    return await service.get_patient_history(patient_id, tenant_id=tenant_id)
 
 
 @router.get("/{patient_id}/timeline")

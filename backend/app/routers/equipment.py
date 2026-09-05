@@ -73,7 +73,8 @@ async def list_equipment(
     return await service.list_equipment(
         resource_type=resource_type,
         department_id=department_id,
-        status=status
+        status=status,
+        tenant_id=current_staff.tenant_id
     )
 
 
@@ -85,7 +86,7 @@ async def get_equipment(
 ):
     """Get details of a specific equipment resource."""
     service = EquipmentService(db)
-    eq = await service.get_equipment_by_id(equipment_id)
+    eq = await service.get_equipment_by_id(equipment_id, tenant_id=current_staff.tenant_id)
     if not eq:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Equipment {equipment_id} not found")
@@ -105,7 +106,8 @@ async def update_equipment_status(
         equipment_id=equipment_id,
         status=req.status,
         reason=req.reason,
-        actor_id=current_staff.id
+        actor_id=current_staff.id,
+        tenant_id=current_staff.tenant_id
     )
 
 
@@ -124,7 +126,8 @@ async def create_equipment_booking(
         encounter_id=booking_in.encounter_id,
         patient_id=booking_in.patient_id,
         notes=booking_in.notes,
-        actor_id=current_staff.id
+        actor_id=current_staff.id,
+        tenant_id=current_staff.tenant_id
     )
 
 

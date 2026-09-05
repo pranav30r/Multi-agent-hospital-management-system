@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 class EquipmentResponse(BaseModel):
     id: str
@@ -9,12 +9,11 @@ class EquipmentResponse(BaseModel):
     department_id: str
     status: str
     slot_duration_mins: int
-    current_patient_id: Optional[str]
-    current_encounter_id: Optional[str]
+    current_patient_id: Optional[str] = None
+    current_encounter_id: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class EquipmentBookingCreate(BaseModel):
     equipment_id: str
@@ -30,9 +29,8 @@ class EquipmentBookingResponse(BaseModel):
     patient_id: str
     requested_by: str
     start_time: datetime
-    end_time: Optional[datetime]
+    end_time: Optional[datetime] = None
     status: str
-    notes: Optional[str]
+    notes: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

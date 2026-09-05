@@ -25,11 +25,13 @@ def get_password_hash(password: str) -> str:
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     """
     Creates a cryptographically signed JWT access token.
-    Claims typically include: sub (user/staff ID), role, name, department_id.
+    Claims typically include: sub (user/staff ID), role, name, department_id, tenant_id.
     """
     from app.utils.datetime_utils import utc_now
 
     to_encode = data.copy()
+    if "tenant_id" not in to_encode:
+        to_encode["tenant_id"] = "HOSP-DEFAULT"
     if expires_delta:
         expire = utc_now() + expires_delta
     else:

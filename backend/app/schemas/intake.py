@@ -1,14 +1,14 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class IntakeSessionCreate(BaseModel):
-    patient_id: str = Field(..., example="PAT-001")
-    encounter_id: Optional[str] = Field(None, example="ENC-001")
-    language: str = Field(default="en", example="en")
-    interaction_mode: str = Field(default="TEXT", example="TEXT")  # TEXT, VOICE
-    chief_complaint_raw: Optional[str] = Field(None, example="Severe headache and nausea for 2 days")
+    patient_id: str = Field(..., description="Target patient ID")
+    encounter_id: Optional[str] = Field(None, description="Active encounter ID")
+    language: str = Field(default="en", description="Intake language code")
+    interaction_mode: str = Field(default="TEXT", description="TEXT or VOICE")
+    chief_complaint_raw: Optional[str] = Field(None, description="Verbatim raw chief complaint")
     custom_questions: Optional[List[Dict[str, Any]]] = None
 
 
@@ -28,13 +28,12 @@ class IntakeQuestionResponse(BaseModel):
     is_answered: bool
     is_skipped: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IntakeResponseSubmit(BaseModel):
-    question_id: str = Field(..., example="QST-001")
-    raw_response: str = Field(..., example="I have had a high fever since yesterday evening.")
+    question_id: str = Field(..., description="Target question ID")
+    raw_response: str = Field(..., description="Patient raw text/voice transcription")
     structured_value: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
@@ -48,31 +47,29 @@ class IntakeResponseModel(BaseModel):
     response_type: str
     recorded_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IntakeSessionResponse(BaseModel):
     id: str
     patient_id: str
-    encounter_id: Optional[str]
+    encounter_id: Optional[str] = None
     status: str
     language: str
     interaction_mode: str
-    chief_complaint_raw: Optional[str]
+    chief_complaint_raw: Optional[str] = None
     total_questions: int
     answered_questions: int
     completion_percentage: float
     structured_summary: Optional[Dict[str, Any]] = None
-    started_at: Optional[datetime]
-    completed_at: Optional[datetime]
-    reviewed_at: Optional[datetime]
-    reviewed_by: Optional[str]
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    reviewed_at: Optional[datetime] = None
+    reviewed_by: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IntakeReviewRequest(BaseModel):
-    notes: Optional[str] = Field(None, example="Reviewed and verified pre-consultation intake.")
+    notes: Optional[str] = Field(None, description="Review notes")

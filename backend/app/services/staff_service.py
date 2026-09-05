@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional, Dict, Any, Set
 from datetime import datetime
 from fastapi import HTTPException
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.staff import Staff, StaffShift, StaffSkill
@@ -56,17 +56,25 @@ class StaffService:
         specialization: Optional[str] = None,
         max_workload: int = 5,
         skills: Optional[List[str]] = None,
-        password_hash: Optional[str] = None
+        password_hash: Optional[str] = None,
+        tenant_id: str = "HOSP-DEFAULT"
     ) -> Staff:
         """Create a new staff member with department validation and audit log."""
         role_clean = role.upper()
         if role_clean not in VALID_STAFF_ROLES:
             raise HTTPException(status_code=400, detail=f"Invalid staff role '{role}'. Valid roles: {sorted(list(VALID_STAFF_ROLES))}")
 
-        # Validate department exists
-        dept_res = await self.db.execute(select(Department.id).where(Department.id == department_id))
+        # Validate department exists for this tenant
+        dept_res = await self.db.execute(
+            select(Department.id).where(
+                and_(
+                    Department.id == department_id,
+                    Department.tenant_id == tenant_id
+                )
+            )
+        )
         if not dept_res.scalars().first():
-            raise HTTPException(status_code=400, detail=f"Referenced department {department_id} does not exist")
+            raise HTTPException(status_code=400, detail=f"Referenced department {department_id} does not exist for tenant {tenant_id}")
 
         existing_res = await self.db.execute(select(Staff.id).where(Staff.id == id))
         if existing_res.scalars().first():
@@ -74,6 +82,7 @@ class StaffService:
 
         staff = Staff(
             id=id,
+            tenant_id=tenant_id,
             first_name=first_name.strip(),
             last_name=last_name.strip(),
             role=role_clean,
@@ -89,6 +98,7 @@ class StaffService:
         self.db.add(staff)
 
         audit = AuditLog(
+            tenant_id=tenant_id,
             entity_type="staff",
             entity_id=id,
             field_changed="creation",
@@ -104,19 +114,25 @@ class StaffService:
         logger.info(f"Created staff {id} ({first_name} {last_name}, {role_clean}) by {actor_id}")
         return staff
 
-    async def get_staff_by_id(self, staff_id: str) -> Optional[Staff]:
-        """Fetch staff member by primary key ID."""
-        result = await self.db.execute(select(Staff).where(Staff.id == staff_id))
+    async def get_staff_by_id(self, staff_id: str, tenant_id: Optional[str] = None) -> Optional[Staff]:
+        """Fetch staff member by primary key ID with optional tenant filter."""
+        query = select(Staff).where(Staff.id == staff_id)
+        if tenant_id:
+            query = query.where(Staff.tenant_id == tenant_id)
+        result = await self.db.execute(query)
         return result.scalars().first()
 
     async def list_staff(
         self,
         role: Optional[str] = None,
         department_id: Optional[str] = None,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        tenant_id: Optional[str] = None
     ) -> List[Staff]:
-        """List hospital staff with optional role, department, and status filters."""
+        """List hospital staff with optional role, department, status, and tenant filters."""
         query = select(Staff)
+        if tenant_id:
+            query = query.where(Staff.tenant_id == tenant_id)
         if role:
             query = query.where(Staff.role == role.upper())
         if department_id:
@@ -199,16 +215,19 @@ class StaffService:
         self,
         department_id: Optional[str] = None,
         role: Optional[str] = None,
-        required_skill: Optional[str] = None
+        required_skill: Optional[str] = None,
+        tenant_id: Optional[str] = None
     ) -> List[Staff]:
         """
         Find all staff members who are AVAILABLE and below maximum workload capacity.
-        Optionally filter by department, role, and certified skill.
+        Optionally filter by department, role, certified skill, and tenant.
         """
         query = select(Staff).where(
             Staff.status == "AVAILABLE",
             Staff.current_workload < Staff.max_workload
         )
+        if tenant_id:
+            query = query.where(Staff.tenant_id == tenant_id)
         if department_id:
             query = query.where(Staff.department_id == department_id)
         if role:

@@ -10,6 +10,7 @@ class Patient(Base):
     __tablename__ = "patients"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"PAT-{uuid.uuid4().hex[:6].upper()}")
+    tenant_id: Mapped[str] = mapped_column(String(50), ForeignKey("tenants.id"), nullable=False, default="HOSP-DEFAULT", server_default="HOSP-DEFAULT", index=True)
     first_name: Mapped[str] = mapped_column(String(50), nullable=False)
     last_name: Mapped[str] = mapped_column(String(50), nullable=False)
     age: Mapped[int] = mapped_column(Integer, nullable=False)

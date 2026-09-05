@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -17,9 +17,9 @@ router = APIRouter(prefix="/approvals", tags=["Human-in-the-Loop Approvals"])
 # ─── Schemas ────────────────────────────────────────────────────────────────
 
 class ApprovalActionRequest(BaseModel):
-    action: str = Field(..., example="APPROVE")  # APPROVE, MODIFY, REJECT
-    modification: Optional[dict] = Field(None, example={"recommended_bed_id": "BED-ICU-04"})
-    rejection_reason: Optional[str] = Field(None, example="Patient requires cardiac monitor bed ICU-04 instead of ICU-07")
+    action: str = Field(..., description="APPROVE, MODIFY, REJECT")
+    modification: Optional[dict] = Field(None, description="Modified action payload")
+    rejection_reason: Optional[str] = Field(None, description="Rejection reason")
 
 
 class ApprovalItemResponse(BaseModel):
@@ -31,15 +31,14 @@ class ApprovalItemResponse(BaseModel):
     proposed_action: dict
     reasoning: str
     status: str
-    reviewed_by: Optional[str]
-    review_action: Optional[str]
-    modification: Optional[dict]
-    rejection_reason: Optional[str]
+    reviewed_by: Optional[str] = None
+    review_action: Optional[str] = None
+    modification: Optional[dict] = None
+    rejection_reason: Optional[str] = None
     created_at: datetime
-    reviewed_at: Optional[datetime]
+    reviewed_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────

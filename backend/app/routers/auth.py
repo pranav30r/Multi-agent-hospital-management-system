@@ -2,7 +2,7 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,8 +19,8 @@ router = APIRouter(prefix="/auth", tags=["Authentication & Security"])
 # ─── Schemas ────────────────────────────────────────────────────────────────
 
 class LoginJSONRequest(BaseModel):
-    staff_id: str = Field(..., example="DOC-001")
-    password: str = Field(..., example="hospital@123")
+    staff_id: str = Field(..., description="Staff ID e.g. DOC-001")
+    password: str = Field(..., description="Staff password")
 
 
 class TokenResponse(BaseModel):
@@ -33,29 +33,29 @@ class TokenResponse(BaseModel):
 
 
 class StaffRegisterRequest(BaseModel):
-    id: str = Field(..., example="DOC-009")
-    first_name: str = Field(..., example="Aarav")
-    last_name: str = Field(..., example="Mehta")
-    role: str = Field(..., example="DOCTOR")
-    department_id: str = Field(..., example="DEP-ER")
-    specialization: Optional[str] = Field(None, example="Trauma Surgery")
-    password: str = Field(default="hospital@123", example="SecurePass123!")
+    id: str = Field(..., description="Staff unique identifier")
+    first_name: str = Field(..., description="Staff first name")
+    last_name: str = Field(..., description="Staff last name")
+    role: str = Field(..., description="Hospital role")
+    department_id: str = Field(..., description="Department assignment")
+    specialization: Optional[str] = Field(None, description="Clinical specialization")
+    password: str = Field(default="hospital@123", description="Account password")
     max_workload: int = Field(default=5)
 
 
 class StaffMeResponse(BaseModel):
     id: str
+    tenant_id: str = "HOSP-DEFAULT"
     first_name: str
     last_name: str
     role: str
     department_id: str
-    specialization: Optional[str]
+    specialization: Optional[str] = None
     status: str
     current_workload: int
     max_workload: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────

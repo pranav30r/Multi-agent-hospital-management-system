@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -17,13 +17,13 @@ router = APIRouter(prefix="/predictions", tags=["Predictive Analytics & Forecast
 # ─── Schemas ────────────────────────────────────────────────────────────────
 
 class PredictionRecordRequest(BaseModel):
-    model_name: str = Field(..., example="SurgeForecaster_v1")
+    model_name: str = Field(..., description="ML model identifier")
     model_version: str = Field(default="1.0.0")
-    prediction_type: str = Field(..., example="SURGE_FORECAST")  # SURGE_FORECAST, ICU_BED_DEMAND, LENGTH_OF_STAY, MORTALITY_RISK
+    prediction_type: str = Field(..., description="SURGE_FORECAST, ICU_BED_DEMAND, LENGTH_OF_STAY, MORTALITY_RISK")
     input_features: Dict[str, Any] = Field(default_factory=dict)
     prediction_output: Dict[str, Any] = Field(default_factory=dict)
-    confidence_score: float = Field(..., ge=0.0, le=1.0, example=0.89)
-    inference_time_ms: float = Field(..., example=12.4)
+    confidence_score: float = Field(..., ge=0.0, le=1.0)
+    inference_time_ms: float = Field(...)
     target_date: Optional[datetime] = None
 
 
@@ -39,8 +39,7 @@ class PredictionResponse(BaseModel):
     target_date: Optional[datetime]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────

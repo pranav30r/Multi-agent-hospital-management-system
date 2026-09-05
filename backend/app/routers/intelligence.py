@@ -5,10 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
-from app.auth.dependencies import require_roles, get_current_staff
+from app.auth.dependencies import require_roles, get_current_staff, get_current_tenant
 from app.services.clinical_intelligence_service import ClinicalIntelligenceService
 from app.services.intelligence_engine_service import IntelligenceEngineService
-from app.schemas.intelligence import IntelligenceExecutionRequest, IntelligenceDecisionResponse
+from app.schemas.intelligence import (
+    IntelligenceExecutionRequest,
+    IntelligenceDecisionResponse,
+    AgentMessageResponse,
+    OptimizationRunResponse
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/clinical-intelligence", tags=["Clinical Intelligence & Decision Support"])
@@ -103,15 +108,18 @@ async def get_doctor_clinical_summary(
 
 
 @router.post("/{encounter_id}/decide", response_model=IntelligenceDecisionResponse, status_code=status.HTTP_200_OK)
+@router.post("/{encounter_id}/orchestrate", response_model=IntelligenceDecisionResponse, status_code=status.HTTP_200_OK)
 async def execute_clinical_intelligence_decision(
     encounter_id: str,
     req: Optional[IntelligenceExecutionRequest] = None,
     current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE", "NURSE"])),
+    tenant_id: str = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Execute deterministic clinical intelligence evaluation for an encounter.
-    Produces a structured decision record and routes consequential recommendations to the
+    Execute cooperative multi-agent workflow evaluation for an encounter.
+    Orchestrates Triage, Bed, and Staff agents under Coordinator synthesis.
+    Produces structured decision records and routes consequential recommendations to the
     Human Review / Approval queue without mutating critical resources directly.
     """
     engine_service = IntelligenceEngineService(db)
@@ -122,6 +130,32 @@ async def execute_clinical_intelligence_decision(
         encounter_id=encounter_id,
         trigger_reason=trigger_reason,
         force_recalculate=force_recalc,
-        actor_id=current_staff.id
+        actor_id=current_staff.id,
+        tenant_id=tenant_id
     )
     return decision_res
+
+
+@router.get("/{encounter_id}/messages", response_model=List[AgentMessageResponse])
+async def get_encounter_agent_messages(
+    encounter_id: str,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE", "NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve all structured inter-agent messages exchanged during multi-agent orchestration for an encounter."""
+    engine_service = IntelligenceEngineService(db)
+    return await engine_service.get_messages_for_encounter(encounter_id)
+
+
+@router.get("/{encounter_id}/optimization-run", response_model=OptimizationRunResponse)
+async def get_encounter_optimization_run(
+    encounter_id: str,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE", "NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve the multi-objective candidate optimization run produced for an encounter."""
+    engine_service = IntelligenceEngineService(db)
+    opt_run = await engine_service.get_optimization_run(encounter_id)
+    if not opt_run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No optimization run found for encounter {encounter_id}")
+    return opt_run

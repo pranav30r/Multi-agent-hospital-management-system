@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Integer, DateTime
+from sqlalchemy import String, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.utils.datetime_utils import utc_now
@@ -8,6 +8,7 @@ class Department(Base):
     __tablename__ = "departments"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # DEP-ER, DEP-ICU, etc.
+    tenant_id: Mapped[str] = mapped_column(String(50), ForeignKey("tenants.id"), nullable=False, default="HOSP-DEFAULT", server_default="HOSP-DEFAULT", index=True)
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     code: Mapped[str] = mapped_column(String(10), nullable=False, unique=True)
     description: Mapped[str] = mapped_column(String(200), nullable=True)
