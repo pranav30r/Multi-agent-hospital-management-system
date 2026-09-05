@@ -28,8 +28,17 @@ if config.config_file_name is not None:
 # Set target metadata for 'autogenerate' support
 target_metadata = Base.metadata
 
-# Override sqlalchemy.url from application settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Use configured sqlalchemy.url if provided, otherwise fallback to application settings
+target_db_url = config.get_main_option("sqlalchemy.url")
+if not target_db_url:
+    target_db_url = settings.DATABASE_URL
+
+if target_db_url.startswith("sqlite:///"):
+    target_db_url = target_db_url.replace("sqlite:///", "sqlite+aiosqlite:///")
+elif target_db_url.startswith("postgresql://"):
+    target_db_url = target_db_url.replace("postgresql://", "postgresql+asyncpg://")
+
+config.set_main_option("sqlalchemy.url", target_db_url)
 
 
 def run_migrations_offline() -> None:

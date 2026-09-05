@@ -21,22 +21,27 @@ class ConnectionManager:
         logger.info(f"WebSocket client connected. Active connections: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
         logger.info(f"WebSocket client disconnected. Active connections: {len(self.active_connections)}")
 
     async def broadcast(self, message: dict):
         """Broadcast an event to all connected WebSocket clients."""
         dead_connections = []
-        for connection in self.active_connections:
+        for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)
             except Exception:
                 dead_connections.append(connection)
         for dc in dead_connections:
-            self.active_connections.remove(dc)
+            if dc in self.active_connections:
+                self.active_connections.remove(dc)
 
     async def send_personal(self, websocket: WebSocket, message: dict):
-        await websocket.send_json(message)
+        try:
+            await websocket.send_json(message)
+        except Exception as e:
+            logger.warning(f"Failed to send personal WebSocket message: {e}")
 
 
 # Singleton connection manager — Person 2's agents will import this

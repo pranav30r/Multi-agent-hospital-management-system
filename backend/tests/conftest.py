@@ -1,8 +1,13 @@
 import asyncio
+# pyrefly: ignore [missing-import]
 import pytest
+# pyrefly: ignore [missing-import]
 import pytest_asyncio
+# pyrefly: ignore [missing-import]
 from httpx import AsyncClient, ASGITransport
+# pyrefly: ignore [missing-import]
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+# pyrefly: ignore [missing-import]
 from sqlalchemy.pool import StaticPool
 
 import sys
@@ -10,6 +15,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from pathlib import Path
+# pyrefly: ignore [missing-import]
 from sqlalchemy import text
 from app.database import Base, get_db
 from app.main import app

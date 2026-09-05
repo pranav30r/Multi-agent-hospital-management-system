@@ -1,9 +1,10 @@
+# pyrefly: ignore [missing-import]
 import pytest
 
 @pytest.mark.asyncio
-async def test_list_departments(client):
+async def test_list_departments(auth_client):
     """Test department query endpoint."""
-    res = await client.get("/api/v1/departments")
+    res = await auth_client.get("/api/v1/departments")
     assert res.status_code == 200
     depts = res.json()
     assert len(depts) == 9
@@ -13,9 +14,9 @@ async def test_list_departments(client):
 
 
 @pytest.mark.asyncio
-async def test_list_beds_filter(client):
+async def test_list_beds_filter(auth_client):
     """Test bed listing and department filtering."""
-    res = await client.get("/api/v1/beds?department_id=DEP-ICU")
+    res = await auth_client.get("/api/v1/beds?department_id=DEP-ICU")
     assert res.status_code == 200
     beds = res.json()
     assert len(beds) == 8

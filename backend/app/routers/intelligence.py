@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +7,8 @@ from app.database import get_db
 from app.models.staff import Staff
 from app.auth.dependencies import require_roles, get_current_staff
 from app.services.clinical_intelligence_service import ClinicalIntelligenceService
+from app.services.intelligence_engine_service import IntelligenceEngineService
+from app.schemas.intelligence import IntelligenceExecutionRequest, IntelligenceDecisionResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/clinical-intelligence", tags=["Clinical Intelligence & Decision Support"])
@@ -98,3 +100,28 @@ async def get_doctor_clinical_summary(
     """Retrieve structured doctor-facing clinical pre-consultation summary."""
     service = ClinicalIntelligenceService(db)
     return await service.get_summary(encounter_id)
+
+
+@router.post("/{encounter_id}/decide", response_model=IntelligenceDecisionResponse, status_code=status.HTTP_200_OK)
+async def execute_clinical_intelligence_decision(
+    encounter_id: str,
+    req: Optional[IntelligenceExecutionRequest] = None,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE", "NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Execute deterministic clinical intelligence evaluation for an encounter.
+    Produces a structured decision record and routes consequential recommendations to the
+    Human Review / Approval queue without mutating critical resources directly.
+    """
+    engine_service = IntelligenceEngineService(db)
+    trigger_reason = req.trigger_reason if req else None
+    force_recalc = req.force_recalculate if req else False
+
+    decision_res = await engine_service.execute_intelligence(
+        encounter_id=encounter_id,
+        trigger_reason=trigger_reason,
+        force_recalculate=force_recalc,
+        actor_id=current_staff.id
+    )
+    return decision_res

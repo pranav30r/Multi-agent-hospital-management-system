@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
-from app.auth.dependencies import require_roles
+from app.auth.dependencies import require_roles, get_current_staff
 from app.services.bed_service import BedService
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,10 @@ class DepartmentResponse(BaseModel):
 # ─── Endpoints ──────────────────────────────────────────────────────────────
 
 @router.get("/departments", response_model=List[DepartmentResponse])
-async def list_departments(db: AsyncSession = Depends(get_db)):
+async def list_departments(
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """List all hospital departments and current capacity metrics."""
     service = BedService(db)
     return await service.list_departments()
@@ -64,6 +67,7 @@ async def list_departments(db: AsyncSession = Depends(get_db)):
 async def list_beds(
     department_id: Optional[str] = None,
     bed_status: Optional[str] = None,
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """List hospital beds with optional department and status filters."""

@@ -41,6 +41,7 @@ async def start_clinical_intake(
 @router.get("/{session_id}", response_model=IntakeSessionResponse)
 async def get_clinical_intake_session(
     session_id: str,
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """Get clinical intake session metadata and progress metrics."""
@@ -54,6 +55,7 @@ async def get_clinical_intake_session(
 @router.get("/{session_id}/current-question", response_model=Optional[IntakeQuestionResponse])
 async def get_current_intake_question(
     session_id: str,
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -152,6 +154,7 @@ async def get_doctor_clinical_view(
 @router.get("/encounter/{encounter_id}", response_model=Optional[IntakeSessionResponse])
 async def get_intake_by_encounter(
     encounter_id: str,
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieve the clinical intake session associated with a specific encounter."""
@@ -165,6 +168,7 @@ async def get_intake_by_encounter(
 @router.get("/timeline/{patient_id}")
 async def get_patient_clinical_timeline(
     patient_id: str,
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieve full chronological medical timeline for a patient."""
@@ -175,6 +179,7 @@ async def get_patient_clinical_timeline(
 @router.get("/{session_id}/structured")
 async def get_structured_clinical_intake(
     session_id: str,
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -187,6 +192,7 @@ async def get_structured_clinical_intake(
 @router.get("/patient/{patient_id}", response_model=List[IntakeSessionResponse])
 async def list_patient_intake_sessions(
     patient_id: str,
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """List historical clinical intake sessions for a patient."""

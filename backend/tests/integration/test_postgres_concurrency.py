@@ -20,10 +20,22 @@ async def test_01_bed_double_booking_postgres(pg_db):
 
     # Seed two patient records for concurrent assignments
     async with pg_db() as init_session:
-        p1 = Patient(id="PAT-CONC-01", first_name="Aarav", last_name="Sharma", age=45, gender="M")
-        p2 = Patient(id="PAT-CONC-02", first_name="Diya", last_name="Verma", age=38, gender="F")
-        enc1 = Encounter(id="ENC-CONC-01", patient_id="PAT-CONC-01", chief_complaint="Severe Chest Pain", esi_level=1)
-        enc2 = Encounter(id="ENC-CONC-02", patient_id="PAT-CONC-02", chief_complaint="Respiratory Distress", esi_level=2)
+        p1 = Patient(
+            id="PAT-CONC-01", first_name="Aarav", last_name="Sharma", age=45, gender="M",
+            blood_group="O+", contact_phone="9876543210", emergency_contact="9876543211"
+        )
+        p2 = Patient(
+            id="PAT-CONC-02", first_name="Diya", last_name="Verma", age=38, gender="F",
+            blood_group="A+", contact_phone="9876543212", emergency_contact="9876543213"
+        )
+        enc1 = Encounter(
+            id="ENC-CONC-01", patient_id="PAT-CONC-01", chief_complaint="Severe Chest Pain", esi_level=1,
+            current_department_id="DEP-EMERGENCY"
+        )
+        enc2 = Encounter(
+            id="ENC-CONC-02", patient_id="PAT-CONC-02", chief_complaint="Respiratory Distress", esi_level=2,
+            current_department_id="DEP-EMERGENCY"
+        )
         init_session.add_all([p1, p2, enc1, enc2])
         await init_session.commit()
 
@@ -104,10 +116,22 @@ async def test_02_equipment_double_booking_postgres(pg_db):
     target_eq_id = "RES-CT-01"
 
     async with pg_db() as init_session:
-        p1 = Patient(id="PAT-EQ-01", first_name="Karan", last_name="Malhotra", age=50, gender="M")
-        p2 = Patient(id="PAT-EQ-02", first_name="Meera", last_name="Sen", age=42, gender="F")
-        enc1 = Encounter(id="ENC-EQ-01", patient_id="PAT-EQ-01", chief_complaint="Head Trauma", esi_level=1)
-        enc2 = Encounter(id="ENC-EQ-02", patient_id="PAT-EQ-02", chief_complaint="Abdominal Pain", esi_level=2)
+        p1 = Patient(
+            id="PAT-EQ-01", first_name="Karan", last_name="Malhotra", age=50, gender="M",
+            blood_group="B+", contact_phone="9876543214", emergency_contact="9876543215"
+        )
+        p2 = Patient(
+            id="PAT-EQ-02", first_name="Meera", last_name="Sen", age=42, gender="F",
+            blood_group="AB+", contact_phone="9876543216", emergency_contact="9876543217"
+        )
+        enc1 = Encounter(
+            id="ENC-EQ-01", patient_id="PAT-EQ-01", chief_complaint="Head Trauma", esi_level=1,
+            current_department_id="DEP-EMERGENCY"
+        )
+        enc2 = Encounter(
+            id="ENC-EQ-02", patient_id="PAT-EQ-02", chief_complaint="Abdominal Pain", esi_level=2,
+            current_department_id="DEP-EMERGENCY"
+        )
         init_session.add_all([p1, p2, enc1, enc2])
         await init_session.commit()
 
@@ -193,7 +217,8 @@ async def test_03_approval_double_execution_postgres(pg_db):
             agent_id="AGENT-TRIAGE-01",
             action_type="BED_TRANSFER",
             risk_level="HIGH",
-            proposed_payload={"bed_id": "BED-ICU-02"},
+            proposed_action={"bed_id": "BED-ICU-02"},
+            reasoning="Patient condition deteriorating",
             status="PENDING"
         )
         init_session.add_all([decision, item])
@@ -279,7 +304,8 @@ async def test_04_transaction_rollback_postgres(pg_db):
                     field_changed="status",
                     old_value="AVAILABLE",
                     new_value="OCCUPIED",
-                    changed_by="TEST-AGENT"
+                    changed_by="TEST-AGENT",
+                    change_reason="Rollback test execution"
                 ))
 
                 # Force infrastructure failure before commit

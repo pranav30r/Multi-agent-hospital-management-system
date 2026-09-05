@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
-from app.auth.dependencies import require_roles
+from app.auth.dependencies import require_roles, get_current_staff
 from app.services.approval_service import ApprovalService
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,10 @@ class ApprovalItemResponse(BaseModel):
 # ─── Endpoints ──────────────────────────────────────────────────────────────
 
 @router.get("/pending", response_model=List[ApprovalItemResponse])
-async def list_pending_approvals(db: AsyncSession = Depends(get_db)):
+async def list_pending_approvals(
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """List all pending items in the Human Review Queue requiring staff/clinician approval."""
     service = ApprovalService(db)
     return await service.list_pending_approvals()

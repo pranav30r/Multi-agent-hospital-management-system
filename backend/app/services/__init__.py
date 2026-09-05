@@ -16,6 +16,7 @@ from app.services.clinical_intelligence_service import ClinicalIntelligenceServi
 from app.services.clinical_document_service import ClinicalDocumentService
 from app.services.investigation_service import InvestigationService
 from app.services.clinical_priority_service import ClinicalPriorityService
+from app.services.intelligence_engine_service import IntelligenceEngineService
 
 __all__ = [
     "BedService",
@@ -35,5 +36,6 @@ __all__ = [
     "ClinicalIntelligenceService",
     "ClinicalDocumentService",
     "InvestigationService",
-    "ClinicalPriorityService"
+    "ClinicalPriorityService",
+    "IntelligenceEngineService"
 ]

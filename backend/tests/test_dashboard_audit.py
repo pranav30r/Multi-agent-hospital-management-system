@@ -1,9 +1,9 @@
 import pytest
 
 @pytest.mark.asyncio
-async def test_dashboard_state_snapshot(client):
+async def test_dashboard_state_snapshot(auth_client):
     """Test full hospital dashboard state snapshot endpoint."""
-    res = await client.get("/api/v1/dashboard/state")
+    res = await auth_client.get("/api/v1/dashboard/state")
     assert res.status_code == 200
     state = res.json()
     assert "hospital_mode" in state
@@ -15,9 +15,9 @@ async def test_dashboard_state_snapshot(client):
 
 
 @pytest.mark.asyncio
-async def test_dashboard_departments_summary(client):
+async def test_dashboard_departments_summary(auth_client):
     """Test per-department summary with capacity metrics."""
-    res = await client.get("/api/v1/dashboard/departments/summary")
+    res = await auth_client.get("/api/v1/dashboard/departments/summary")
     assert res.status_code == 200
     depts = res.json()
     assert len(depts) == 9
@@ -28,13 +28,13 @@ async def test_dashboard_departments_summary(client):
 
 
 @pytest.mark.asyncio
-async def test_audit_logs_and_stats(client):
+async def test_audit_logs_and_stats(admin_client):
     """Test querying audit logs and audit statistics."""
-    res = await client.get("/api/v1/audit")
+    res = await admin_client.get("/api/v1/audit")
     assert res.status_code == 200
     logs = res.json()
     assert isinstance(logs, list)
 
-    stats_res = await client.get("/api/v1/audit/stats")
+    stats_res = await admin_client.get("/api/v1/audit/stats")
     assert stats_res.status_code == 200
     assert "total_entries" in stats_res.json()

@@ -11,9 +11,9 @@ async def test_request_context_middleware_headers(client):
 
 
 @pytest.mark.asyncio
-async def test_system_metrics_endpoint(client):
+async def test_system_metrics_endpoint(auth_client):
     """Verify system telemetry metrics (memory, CPU, DB status, uptime)."""
-    response = await client.get("/api/v1/system/metrics")
+    response = await auth_client.get("/api/v1/system/metrics")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ONLINE"
@@ -61,6 +61,19 @@ def test_production_secret_guard_blocks_insecure_secrets():
     with pytest.raises(ValueError, match="CRITICAL SECURITY CONFIGURATION ERROR"):
         Settings(
             ENVIRONMENT="production",
+            DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/hms",
             SECRET_KEY="hospital-super-secret-key-change-in-production-2026",
             JWT_SECRET="hospital-super-secret-key-change-in-production-2026"
+        )
+
+
+def test_production_guard_blocks_sqlite_in_production():
+    """Verify that Settings raises an error if production is booted with SQLite DATABASE_URL."""
+    from app.config import Settings
+    with pytest.raises(ValueError, match="CRITICAL DATABASE CONFIGURATION ERROR"):
+        Settings(
+            ENVIRONMENT="production",
+            DATABASE_URL="sqlite+aiosqlite:///./test.db",
+            SECRET_KEY="a_very_long_secure_custom_secret_key_12345",
+            JWT_SECRET="a_very_long_secure_custom_jwt_secret_12345"
         )

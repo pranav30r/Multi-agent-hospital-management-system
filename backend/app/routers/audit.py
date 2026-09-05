@@ -7,7 +7,8 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import AuditLog
+from app.models import AuditLog, Staff
+from app.auth.dependencies import require_roles
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/audit", tags=["Audit Trail & Security"])
@@ -36,6 +37,7 @@ async def list_audit_logs(
     entity_id: Optional[str] = Query(None, description="Filter by specific entity ID (e.g., BED-ICU-07)"),
     changed_by: Optional[str] = Query(None, description="Filter by actor ID (staff or agent)"),
     limit: int = Query(100, ge=1, le=500),
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR"])),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -59,6 +61,7 @@ async def list_audit_logs(
 async def get_entity_history(
     entity_type: str,
     entity_id: str,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR"])),
     db: AsyncSession = Depends(get_db)
 ):
     """Get the complete change history for a specific entity (e.g., all changes to BED-ICU-07)."""
@@ -71,7 +74,10 @@ async def get_entity_history(
 
 
 @router.get("/stats")
-async def audit_stats(db: AsyncSession = Depends(get_db)):
+async def audit_stats(
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR"])),
+    db: AsyncSession = Depends(get_db)
+):
     """Get audit trail summary statistics."""
     result = await db.execute(select(AuditLog))
     logs = result.scalars().all()

@@ -47,15 +47,20 @@ class EncounterService:
         if not patient:
             raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
 
-        # 2. Validate department reference
-        target_dept_id = current_department_id or "DEP-ER"
-        d_res = await self.db.execute(select(Department.id).where(Department.id == target_dept_id))
-        dept = d_res.scalars().first()
-        if not dept:
-            # Fallback check for any valid department
-            d_fallback = await self.db.execute(select(Department.id).limit(1))
-            fallback_id = d_fallback.scalars().first()
-            target_dept_id = fallback_id or "DEP-ER"
+        # 2. Validate department reference dynamically from database
+        target_dept_id = current_department_id
+        if target_dept_id:
+            d_res = await self.db.execute(select(Department.id).where(Department.id == target_dept_id))
+            dept = d_res.scalars().first()
+            if not dept:
+                raise HTTPException(status_code=404, detail=f"Department {target_dept_id} not found")
+        else:
+            # Query default emergency department dynamically by code
+            d_res = await self.db.execute(select(Department.id).where(Department.code.in_(["ER", "ED", "EMERGENCY"])))
+            target_dept_id = d_res.scalars().first()
+            if not target_dept_id:
+                d_fallback = await self.db.execute(select(Department.id).limit(1))
+                target_dept_id = d_fallback.scalars().first()
 
         encounter = Encounter(
             patient_id=patient_id,

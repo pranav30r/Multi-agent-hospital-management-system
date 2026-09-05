@@ -35,8 +35,8 @@ async def test_emergency_declaration_and_resolution(admin_client):
 
 
 @pytest.mark.asyncio
-async def test_approvals_list(client):
+async def test_approvals_list(auth_client):
     """Test approval queue query endpoint."""
-    res = await client.get("/api/v1/approvals/pending")
+    res = await auth_client.get("/api/v1/approvals/pending")
     assert res.status_code == 200
     assert isinstance(res.json(), list)

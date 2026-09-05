@@ -22,10 +22,10 @@ class BedManualBookRequest(BaseModel):
     bed_id: str
     encounter_id: str
     patient_id: str
-    booked_by: str = "ADM-001"
+    booked_by: Optional[str] = None
     reason: str = "Manual bed reservation via command center"
 
 class BedStatusUpdate(BaseModel):
     status: str
-    changed_by: str = "STAFF-001"
+    changed_by: Optional[str] = None
     reason: str = "Status update"

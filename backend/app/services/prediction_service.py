@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.prediction import PredictionRun
 from app.models.bed import Bed
+from app.models.department import Department
 from app.models.patient import Encounter
 from app.models.staff import Staff
 from app.models.agent import AuditLog
@@ -144,7 +145,7 @@ class PredictionService:
         # Execute deterministic domain forecast logic based on type
         if type_clean in ["ICU_DEMAND", "ICU_BED_DEMAND"]:
             icu_occ_res = await self.db.execute(
-                select(func.count(Bed.id)).where(Bed.department_id == "DEP-ICU", Bed.status == "OCCUPIED")
+                select(func.count(Bed.id)).where(Bed.bed_type == "ICU", Bed.status == "OCCUPIED")
             )
             icu_occupied = icu_occ_res.scalar() or 0
             predicted_val = round(icu_occupied * 1.15 + (active_encounters * 0.1), 1)
@@ -156,8 +157,9 @@ class PredictionService:
             model_name = "ICUDemandForecaster_v1"
 
         elif type_clean == "ED_SURGE":
+            er_dept_subq = select(Department.id).where(Department.code.in_(["ER", "ED", "EMERGENCY"]))
             er_enc_res = await self.db.execute(
-                select(func.count(Encounter.id)).where(Encounter.current_department_id == "DEP-ER", Encounter.status == "ACTIVE")
+                select(func.count(Encounter.id)).where(Encounter.current_department_id.in_(er_dept_subq), Encounter.status == "ACTIVE")
             )
             er_active = er_enc_res.scalar() or 0
             predicted_val = float(er_active + (2 * forecast_horizon_hours))

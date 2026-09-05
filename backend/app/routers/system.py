@@ -9,13 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, engine
 from app.config import settings
+from app.models.staff import Staff
+from app.auth.dependencies import get_current_staff
 from app.utils.datetime_utils import utc_now
 
 router = APIRouter(prefix="/system", tags=["System Telemetry & Metrics"])
 START_TIME = utc_now()
 
 @router.get("/metrics")
-async def get_system_metrics(db: AsyncSession = Depends(get_db)):
+async def get_system_metrics(
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """
     Returns deep system performance metrics:
     - Python environment & OS stats

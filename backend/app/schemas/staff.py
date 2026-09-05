@@ -20,7 +20,7 @@ class StaffResponse(BaseModel):
 
 class StaffStatusUpdate(BaseModel):
     status: str
-    changed_by: str = "ADM-001"
+    changed_by: Optional[str] = None
     reason: str = "Manual status update"
 
 class StaffShiftResponse(BaseModel):

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Disease, Staff
-from app.auth.dependencies import require_roles
+from app.auth.dependencies import require_roles, get_current_staff
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/diseases", tags=["Disease Registry"])
@@ -32,7 +32,10 @@ class DiseaseResponse(BaseModel):
         from_attributes = True
 
 @router.get("", response_model=List[DiseaseResponse])
-async def list_diseases(db: AsyncSession = Depends(get_db)):
+async def list_diseases(
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """List all registered diseases from the ICD-10 reference registry."""
     res = await db.execute(select(Disease).where(Disease.is_active == True).order_by(Disease.name))
     return res.scalars().all()

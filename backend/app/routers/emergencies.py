@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
-from app.auth.dependencies import require_roles
+from app.auth.dependencies import require_roles, get_current_staff
 from app.services.emergency_service import EmergencyService
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,10 @@ async def declare_emergency(
 
 
 @router.get("/active", response_model=List[EmergencyResponse])
-async def list_active_emergencies(db: AsyncSession = Depends(get_db)):
+async def list_active_emergencies(
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """Get active emergency events."""
     service = EmergencyService(db)
     return await service.list_active_emergencies()

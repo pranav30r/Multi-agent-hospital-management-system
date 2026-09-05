@@ -16,7 +16,7 @@ class EmergencyEvent(Base):
     
     affected_departments: Mapped[dict] = mapped_column(JSON, default=list)  # ["DEP-ER", "DEP-ICU"]
     expected_patient_surge: Mapped[int] = mapped_column(Integer, default=5)
-    declared_by: Mapped[str] = mapped_column(String, nullable=False, default="ADM-001")
+    declared_by: Mapped[str] = mapped_column(String, nullable=False)
     
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")    # ACTIVE, RESOLVED, ESCALATED
     declared_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

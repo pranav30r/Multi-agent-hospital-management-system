@@ -120,7 +120,7 @@ async def run_validation_suite():
 
         # Adaptively answer all sequential questions
         for _ in range(12):
-            cq_res = await client.get(f"/api/v1/clinical-intakes/{session_id}/current-question")
+            cq_res = await client.get(f"/api/v1/clinical-intakes/{session_id}/current-question", headers=nurse_headers)
             if cq_res.status_code != 200 or not cq_res.json():
                 break
             q = cq_res.json()

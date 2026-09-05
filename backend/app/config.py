@@ -86,6 +86,11 @@ class Settings(BaseSettings):
                     "CRITICAL SECURITY CONFIGURATION ERROR: Production environment detected, but JWT_SECRET "
                     "is insecure, default, or under 16 characters. Set a strong, unique JWT_SECRET environment variable."
                 )
+            if not (self.DATABASE_URL.startswith("postgresql") or self.DATABASE_URL.startswith("postgres")):
+                raise ValueError(
+                    "CRITICAL DATABASE CONFIGURATION ERROR: Production environment detected, but DATABASE_URL "
+                    "is not configured for PostgreSQL. Production requires PostgreSQL (postgresql+asyncpg://...)."
+                )
         return self
 
 

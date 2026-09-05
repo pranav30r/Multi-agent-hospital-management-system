@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
-from app.auth.dependencies import require_roles
+from app.auth.dependencies import require_roles, get_current_staff
 from app.schemas.patient import PatientCreate, PatientResponse, EncounterCreate, EncounterResponse
 from app.services.patient_service import PatientService
 from app.services.encounter_service import EncounterService
@@ -44,6 +44,7 @@ async def list_patients(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     search: Optional[str] = Query(None, description="Search by name, phone, or ID"),
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """List all registered patients with optional pagination and search."""
@@ -54,7 +55,11 @@ async def list_patients(
 
 
 @router.get("/{patient_id}", response_model=PatientResponse)
-async def get_patient(patient_id: str, db: AsyncSession = Depends(get_db)):
+async def get_patient(
+    patient_id: str,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """Get patient details by ID."""
     service = PatientService(db)
     patient = await service.get_patient_by_id(patient_id)
@@ -64,14 +69,22 @@ async def get_patient(patient_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{patient_id}/history", response_model=List[EncounterResponse])
-async def get_patient_history(patient_id: str, db: AsyncSession = Depends(get_db)):
+async def get_patient_history(
+    patient_id: str,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """Retrieve full chronological hospital encounter history for a patient."""
     service = PatientService(db)
     return await service.get_patient_history(patient_id)
 
 
 @router.get("/{patient_id}/timeline")
-async def get_patient_timeline(patient_id: str, db: AsyncSession = Depends(get_db)):
+async def get_patient_timeline(
+    patient_id: str,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """Retrieve full unified chronological medical timeline across encounters and clinical intakes."""
     service = PatientService(db)
     return await service.get_patient_timeline(patient_id)
@@ -105,14 +118,21 @@ async def create_encounter(
 
 
 @router.get("/encounters/active", response_model=List[EncounterResponse])
-async def list_active_encounters(db: AsyncSession = Depends(get_db)):
+async def list_active_encounters(
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """List all active hospital encounters."""
     service = EncounterService(db)
     return await service.list_active_encounters()
 
 
 @router.get("/encounters/{encounter_id}", response_model=EncounterResponse)
-async def get_encounter(encounter_id: str, db: AsyncSession = Depends(get_db)):
+async def get_encounter(
+    encounter_id: str,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """Get details of a specific encounter."""
     service = EncounterService(db)
     encounter = await service.get_encounter_by_id(encounter_id)

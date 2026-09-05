@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
-from app.auth.dependencies import require_roles
+from app.auth.dependencies import require_roles, get_current_staff
 from app.services.equipment_service import EquipmentService
 
 logger = logging.getLogger(__name__)
@@ -22,9 +22,9 @@ class EquipmentResponse(BaseModel):
     resource_type: str
     department_id: str
     status: str
-    slot_duration_mins: int
-    current_patient_id: Optional[str]
-    current_encounter_id: Optional[str]
+    slot_duration_mins: int = 30
+    current_patient_id: Optional[str] = None
+    current_encounter_id: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -33,7 +33,7 @@ class EquipmentResponse(BaseModel):
 
 class EquipmentStatusUpdate(BaseModel):
     status: str = Field(..., example="MAINTENANCE")
-    reason: str = Field(default="Scheduled maintenance")
+    reason: Optional[str] = Field(None, example="Scheduled calibration")
 
 
 class EquipmentBookingCreate(BaseModel):
@@ -65,6 +65,7 @@ async def list_equipment(
     resource_type: Optional[str] = Query(None, description="Filter: CT_SCANNER, MRI, XRAY, VENTILATOR, ECG_MACHINE, etc."),
     department_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None, description="Filter: AVAILABLE, IN_USE, RESERVED, MAINTENANCE"),
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """List all hospital equipment and resources with optional filters."""
@@ -77,7 +78,11 @@ async def list_equipment(
 
 
 @router.get("/{equipment_id}", response_model=EquipmentResponse)
-async def get_equipment(equipment_id: str, db: AsyncSession = Depends(get_db)):
+async def get_equipment(
+    equipment_id: str,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """Get details of a specific equipment resource."""
     service = EquipmentService(db)
     eq = await service.get_equipment_by_id(equipment_id)
@@ -124,7 +129,10 @@ async def create_equipment_booking(
 
 
 @router.get("/bookings/active", response_model=List[EquipmentBookingResponse])
-async def list_active_bookings(db: AsyncSession = Depends(get_db)):
+async def list_active_bookings(
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """List all currently active equipment bookings."""
     service = EquipmentService(db)
     return await service.list_active_bookings()

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
-from app.auth.dependencies import require_roles
+from app.auth.dependencies import require_roles, get_current_staff
 from app.services.workflow_service import WorkflowService
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,10 @@ class TaskResponse(BaseModel):
 # ─── Workflow Definition Endpoints ──────────────────────────────────────────
 
 @router.get("/definitions", response_model=List[WorkflowDefinitionResponse])
-async def list_workflow_definitions(db: AsyncSession = Depends(get_db)):
+async def list_workflow_definitions(
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """List all registered clinical workflow templates (e.g., Emergency Admission, OPD Visit, Transfer)."""
     service = WorkflowService(db)
     return await service.list_definitions()
@@ -106,6 +109,7 @@ async def start_workflow_instance(
 async def list_workflow_instances(
     encounter_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None, description="ACTIVE, COMPLETED, CANCELLED"),
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """List clinical workflow instances with optional filtering."""
@@ -114,7 +118,11 @@ async def list_workflow_instances(
 
 
 @router.get("/instances/{instance_id}", response_model=WorkflowInstanceResponse)
-async def get_workflow_instance(instance_id: str, db: AsyncSession = Depends(get_db)):
+async def get_workflow_instance(
+    instance_id: str,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """Retrieve details and progress of a specific workflow instance."""
     service = WorkflowService(db)
     return await service.get_instance_details(instance_id)
@@ -144,6 +152,7 @@ async def advance_workflow_step(
 @router.get("/queues", response_model=List[QueueResponse])
 async def list_department_queues(
     department_id: Optional[str] = Query(None),
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """Query live queue depths and estimated wait times per department."""
@@ -156,6 +165,7 @@ async def list_clinical_tasks(
     encounter_id: Optional[str] = Query(None),
     assigned_to_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None, description="PENDING, IN_PROGRESS, COMPLETED"),
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """Query scheduled and active clinical workflow tasks."""

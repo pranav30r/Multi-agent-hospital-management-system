@@ -4,13 +4,18 @@ import asyncio
 import pytest
 import pytest_asyncio
 from pathlib import Path
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import text, select
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from app.database import Base
-from app.models import Department, Bed, Staff, Equipment, Disease, WorkflowDefinition
+from app.models import (
+    Department, Bed, BedAssignment, Staff, StaffShift, StaffSkill,
+    Equipment, EquipmentBooking, Disease, WorkflowDefinition,
+    Patient, Encounter, AgentDecision, ApprovalItem, AuditLog
+)
 
 DATABASE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "database"
 
@@ -23,77 +28,91 @@ PG_TEST_URL = os.getenv(
 try:
     import asyncpg
     HAS_ASYNCPG = True
-    pg_test_engine = create_async_engine(
-        PG_TEST_URL,
-        pool_size=20,
-        max_overflow=10,
-        pool_pre_ping=True,
-        isolation_level="READ COMMITTED"
-    )
-    PgTestingSessionLocal = async_sessionmaker(
-        bind=pg_test_engine,
-        class_=AsyncSession,
-        expire_on_commit=False
-    )
 except ImportError:
     HAS_ASYNCPG = False
-    pg_test_engine = None
-    PgTestingSessionLocal = None
+
 
 async def is_postgres_available() -> bool:
     """Checks whether asyncpg is installed and PostgreSQL test instance is reachable."""
-    if not HAS_ASYNCPG or pg_test_engine is None:
+    if not HAS_ASYNCPG:
         return False
+    test_engine = create_async_engine(PG_TEST_URL, poolclass=NullPool)
     try:
-        async with pg_test_engine.connect() as conn:
+        async with test_engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
+        await test_engine.dispose()
         return True
     except Exception:
+        try:
+            await test_engine.dispose()
+        except Exception:
+            pass
         return False
 
-@pytest_asyncio.fixture(scope="session")
-def event_loop():
-    """Create an event loop for the integration test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
 
 @pytest_asyncio.fixture(scope="function")
 async def pg_db():
     """
     Initializes PostgreSQL tables and applies dedicated SQL seed files.
-    Skips test if PostgreSQL daemon is unreachable on the current host.
+    Provides an async_sessionmaker that opens independent PostgreSQL connections (NullPool)
+    for true multi-connection pessimistic concurrency and lock testing.
     """
     if not await is_postgres_available():
         pytest.skip(f"PostgreSQL test database is unreachable at {PG_TEST_URL}. Requires Docker / PostgreSQL.")
 
-    async with pg_test_engine.begin() as conn:
+    engine = create_async_engine(
+        PG_TEST_URL,
+        poolclass=NullPool,
+        isolation_level="READ COMMITTED"
+    )
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+
+    async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
-    # Seed SQL files directly into PostgreSQL
+    # Seed SQL files directly into PostgreSQL with strict error propagation
     seed_files = [
         "02_seed_infrastructure.sql",
         "03_seed_clinical.sql",
         "04_seed_workflows.sql",
         "05_seed_operational.sql"
     ]
-    async with PgTestingSessionLocal() as session:
+    async with session_factory() as session:
         for s_file in seed_files:
             file_path = DATABASE_DIR / s_file
-            if file_path.exists():
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                for stmt in content.split(";"):
-                    s = stmt.strip()
-                    if s:
-                        try:
-                            await session.execute(text(s))
-                        except Exception:
-                            pass
+            if not file_path.exists():
+                raise FileNotFoundError(f"Required seed file not found: {file_path}")
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            for stmt in content.split(";"):
+                s = stmt.strip()
+                if s:
+                    await session.execute(text(s))
         await session.commit()
 
-    yield PgTestingSessionLocal
+        # Explicitly verify required seed entities exist for concurrency tests
+        required_entities = [
+            (Bed, "BED-ICU-01"),
+            (Bed, "BED-WA-01"),
+            (Equipment, "RES-CT-01"),
+        ]
+        for model_cls, entity_id in required_entities:
+            stmt = select(model_cls).where(model_cls.id == entity_id)
+            res = await session.execute(stmt)
+            if res.scalar_one_or_none() is None:
+                raise RuntimeError(
+                    f"PostgreSQL seed verification failure: {model_cls.__name__} '{entity_id}' not found after seeding."
+                )
 
-    async with pg_test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    yield session_factory
+
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+    finally:
+        await engine.dispose()

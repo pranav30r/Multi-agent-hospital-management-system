@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
-from app.auth.dependencies import require_roles
+from app.auth.dependencies import require_roles, get_current_staff
 from app.services.staff_service import StaffService
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class StaffResponse(BaseModel):
     status: str
     current_workload: int
     max_workload: int
-    skills: Optional[list]
+    skills: Optional[List[str]] = None
     created_at: datetime
 
     class Config:
@@ -35,7 +35,7 @@ class StaffResponse(BaseModel):
 
 class StaffStatusUpdate(BaseModel):
     status: str = Field(..., example="BUSY")
-    reason: str = Field(default="Manual status update")
+    reason: Optional[str] = Field(None, example="Assigned to emergency resuscitation")
 
 
 class StaffShiftResponse(BaseModel):
@@ -81,6 +81,7 @@ async def list_staff(
     role: Optional[str] = Query(None, description="Filter by role: DOCTOR, NURSE, CHARGE_NURSE, TECHNICIAN, RECEPTIONIST, ADMINISTRATOR"),
     department_id: Optional[str] = Query(None, description="Filter by department ID"),
     status: Optional[str] = Query(None, description="Filter by status: AVAILABLE, BUSY, ON_BREAK, OFF_SHIFT"),
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """List all hospital staff with optional filters."""
@@ -89,7 +90,11 @@ async def list_staff(
 
 
 @router.get("/{staff_id}", response_model=StaffResponse)
-async def get_staff_member(staff_id: str, db: AsyncSession = Depends(get_db)):
+async def get_staff_member(
+    staff_id: str,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """Get detailed information for a specific staff member."""
     service = StaffService(db)
     staff = await service.get_staff_by_id(staff_id)
@@ -132,7 +137,11 @@ async def increment_workload(
 
 
 @router.get("/departments/{department_id}/ratios")
-async def get_department_staffing_ratios(department_id: str, db: AsyncSession = Depends(get_db)):
+async def get_department_staffing_ratios(
+    department_id: str,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """Get current nurse:patient and doctor:patient ratios for a department."""
     service = StaffService(db)
     return await service.get_department_staffing_ratios(department_id=department_id)
@@ -144,6 +153,7 @@ async def get_department_staffing_ratios(department_id: str, db: AsyncSession = 
 async def list_shifts(
     staff_id: Optional[str] = None,
     shift_type: Optional[str] = None,
+    current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
     """List staff shift schedules."""
@@ -172,7 +182,11 @@ async def create_shift(
 # ─── Skills ─────────────────────────────────────────────────────────────────
 
 @router.get("/{staff_id}/skills", response_model=List[StaffSkillResponse])
-async def list_staff_skills(staff_id: str, db: AsyncSession = Depends(get_db)):
+async def list_staff_skills(
+    staff_id: str,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
     """List all certified skills for a staff member."""
     service = StaffService(db)
     return await service.list_staff_skills(staff_id=staff_id)
