@@ -27,8 +27,6 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-API docs at: `http://localhost:8000/docs`
-
 ## Backend Stats
 
 - **28** SQLAlchemy models
