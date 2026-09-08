@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 class Bed(Base):
     __tablename__ = "beds"
@@ -32,7 +33,7 @@ class BedAssignment(Base):
     assigned_by: Mapped[str] = mapped_column(String, nullable=False)  # Agent ID or Staff ID
     is_manual_override: Mapped[bool] = mapped_column(Boolean, default=False)
     
-    reserved_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reserved_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     occupied_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     released_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="RESERVED")  # RESERVED, OCCUPIED, RELEASED, CANCELLED

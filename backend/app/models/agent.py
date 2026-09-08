@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, JSON, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 class AgentDecision(Base):
     __tablename__ = "agent_decisions"
@@ -22,7 +23,7 @@ class AgentDecision(Base):
     risk_level: Mapped[str] = mapped_column(String(10), default="MEDIUM")  # LOW, MEDIUM, HIGH
     status: Mapped[str] = mapped_column(String(20), default="PROPOSED")     # PROPOSED, APPROVED, MODIFIED, REJECTED, EXPIRED
     
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 class AgentMessage(Base):
@@ -40,7 +41,7 @@ class AgentMessage(Base):
     
     status: Mapped[str] = mapped_column(String(20), default="DELIVERED")    # SENT, DELIVERED, READ, RESPONDED
     response_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 class OptimizationRun(Base):
     __tablename__ = "optimization_runs"
@@ -65,8 +66,8 @@ class OptimizationRun(Base):
     hard_constraint_pass: Mapped[bool] = mapped_column(Boolean, default=True)
     
     status: Mapped[str] = mapped_column(String(20), default="COMPLETED")
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     computation_time_ms: Mapped[int] = mapped_column(Integer, default=25)
 
 class CrewRun(Base):
@@ -80,7 +81,7 @@ class CrewRun(Base):
     
     output_summary: Mapped[Text] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="COMPLETED")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 class LangGraphCheckpoint(Base):
     __tablename__ = "langgraph_checkpoints"
@@ -89,7 +90,7 @@ class LangGraphCheckpoint(Base):
     thread_id: Mapped[str] = mapped_column(String, nullable=False)  # Encounter ID or Session ID
     node_name: Mapped[str] = mapped_column(String(50), nullable=False)
     state_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 class ApprovalItem(Base):
     __tablename__ = "approval_items"
@@ -110,7 +111,7 @@ class ApprovalItem(Base):
     modification: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     rejection_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -118,7 +119,7 @@ class AuditLog(Base):
     __tablename__ = "audit_log"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"AUD-{uuid.uuid4().hex[:6].upper()}")
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     entity_type: Mapped[str] = mapped_column(String(30), nullable=False)  # patient, bed, staff, resource
     entity_id: Mapped[str] = mapped_column(String, nullable=False)
     

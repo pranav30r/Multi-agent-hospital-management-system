@@ -53,14 +53,16 @@ async def websocket_event_stream(websocket: WebSocket):
     """
     await ws_manager.connect(websocket)
 
+    from app.utils.datetime_utils import utc_now_iso
+
     # Send welcome event
     await ws_manager.send_personal(websocket, {
         "event_type": "SYSTEM_CONNECTED",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utc_now_iso(),
         "source": "SYSTEM",
         "payload": {
             "message": "Connected to Hospital Command Center Event Stream",
-            "server_time": datetime.utcnow().isoformat()
+            "server_time": utc_now_iso()
         }
     })
 
@@ -72,7 +74,7 @@ async def websocket_event_stream(websocket: WebSocket):
             if data == "ping":
                 await ws_manager.send_personal(websocket, {
                     "event_type": "PONG",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": utc_now_iso(),
                     "source": "SYSTEM",
                     "payload": {}
                 })

@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 class Queue(Base):
     __tablename__ = "queues"
@@ -19,7 +20,7 @@ class Queue(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="WAITING")  # WAITING, CALLED, COMPLETED, CANCELLED
     
-    entered_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    entered_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     estimated_wait_mins: Mapped[int] = mapped_column(Integer, default=15)
 
 class Task(Base):
@@ -39,7 +40,7 @@ class Task(Base):
     status: Mapped[str] = mapped_column(String(20), default="PENDING")  # PENDING, IN_PROGRESS, COMPLETED, CANCELLED
     priority: Mapped[int] = mapped_column(Integer, default=3)
     
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 class Admission(Base):
@@ -53,7 +54,7 @@ class Admission(Base):
     admitting_doctor_id: Mapped[str] = mapped_column(String, ForeignKey("staff.id"), nullable=False)
     
     status: Mapped[str] = mapped_column(String(20), default="ADMITTED")
-    admitted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    admitted_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 class Transfer(Base):
     __tablename__ = "transfers"
@@ -81,7 +82,7 @@ class Discharge(Base):
     
     summary_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     follow_up_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    discharged_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    discharged_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 # LangGraph / Clinical Workflow Automation Engine
 class WorkflowDefinition(Base):
@@ -105,7 +106,7 @@ class WorkflowInstance(Base):
     current_step_number: Mapped[int] = mapped_column(Integer, default=1)
     blocked_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 class WorkflowStep(Base):
