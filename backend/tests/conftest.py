@@ -95,12 +95,13 @@ async def client(test_db):
 @pytest.fixture
 def make_auth_headers():
     """Helper fixture to generate JWT authorization headers for any staff role."""
-    def _make(staff_id: str = "DOC-001", role: str = "DOCTOR", name: str = "Dr. Test", department_id: str = "DEP-ER"):
+    def _make(staff_id: str = "DOC-001", role: str = "DOCTOR", name: str = "Dr. Test", department_id: str = "DEP-ER", tenant_id: str = "HOSP-DEFAULT"):
         token = create_access_token({
             "sub": staff_id,
             "role": role,
             "name": name,
-            "department_id": department_id
+            "department_id": department_id,
+            "tenant_id": tenant_id
         })
         return {"Authorization": f"Bearer {token}"}
     return _make

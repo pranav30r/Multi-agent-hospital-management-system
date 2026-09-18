@@ -227,14 +227,14 @@ async def test_07_invalid_password_fails_with_401(client):
 
 
 @pytest.mark.asyncio
-async def test_08_custom_registered_user_cannot_bypass_with_default_password(client):
+async def test_08_custom_registered_user_cannot_bypass_with_default_password(admin_client, client):
     """
     Test Requirement 8:
     Hardcoded 'hospital@123' must NOT magically authenticate an account
     whose stored password hash is custom.
     """
-    # 1. Register a user with custom secret password
-    reg_res = await client.post("/api/v1/auth/register", json={
+    # 1. Register a user with custom secret password as authenticated administrator
+    reg_res = await admin_client.post("/api/v1/auth/register", json={
         "id": "DOC-CUSTOM-99",
         "first_name": "Custom",
         "last_name": "Doctor",
@@ -261,14 +261,14 @@ async def test_08_custom_registered_user_cannot_bypass_with_default_password(cli
 
 
 @pytest.mark.asyncio
-async def test_09_account_lockout_after_failed_attempts(client):
+async def test_09_account_lockout_after_failed_attempts(admin_client, client):
     """
     Test Requirement 9:
     Account lockout triggers after multiple consecutive failed attempts.
     """
     staff_id = "DOC-LOCK-01"
-    # Register test account
-    await client.post("/api/v1/auth/register", json={
+    # Register test account as authenticated administrator
+    await admin_client.post("/api/v1/auth/register", json={
         "id": staff_id,
         "first_name": "Lock",
         "last_name": "Target",

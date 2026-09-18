@@ -3,14 +3,16 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
+from app.models.department import Department
 from app.models.agent import AuditLog
 from app.auth.security import create_access_token, verify_password, get_password_hash
-from app.auth.dependencies import get_current_staff
+from app.auth.dependencies import get_current_staff, require_roles
+from app.services.staff_service import VALID_STAFF_ROLES
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication & Security"])
@@ -30,10 +32,12 @@ class TokenResponse(BaseModel):
     name: str
     role: str
     department_id: str
+    tenant_id: str = "HOSP-DEFAULT"
 
 
 class StaffRegisterRequest(BaseModel):
     id: str = Field(..., description="Staff unique identifier")
+    tenant_id: str = Field(default="HOSP-DEFAULT", description="Hospital tenant identifier")
     first_name: str = Field(..., description="Staff first name")
     last_name: str = Field(..., description="Staff last name")
     role: str = Field(..., description="Hospital role")
@@ -41,6 +45,7 @@ class StaffRegisterRequest(BaseModel):
     specialization: Optional[str] = Field(None, description="Clinical specialization")
     password: str = Field(default="hospital@123", description="Account password")
     max_workload: int = Field(default=5)
+
 
 
 class StaffMeResponse(BaseModel):
@@ -102,16 +107,19 @@ async def login(
     # Login successful: reset failed attempt counter
     reset_failed_login(staff.id)
 
+    effective_tenant = getattr(staff, "tenant_id", "HOSP-DEFAULT") or "HOSP-DEFAULT"
     token_payload = {
         "sub": staff.id,
         "role": staff.role,
         "name": f"{staff.first_name} {staff.last_name}",
-        "department_id": staff.department_id
+        "department_id": staff.department_id,
+        "tenant_id": effective_tenant
     }
     access_token = create_access_token(data=token_payload)
 
     # Log successful login in audit trail
     audit = AuditLog(
+        tenant_id=effective_tenant,
         entity_type="staff",
         entity_id=staff.id,
         field_changed="session",
@@ -123,14 +131,15 @@ async def login(
     db.add(audit)
     await db.commit()
 
-    logger.info(f"Staff {staff.id} ({staff.role}) successfully logged in")
+    logger.info(f"Staff {staff.id} ({staff.role}) successfully logged in for tenant {effective_tenant}")
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "staff_id": staff.id,
         "name": f"{staff.first_name} {staff.last_name}",
         "role": staff.role,
-        "department_id": staff.department_id
+        "department_id": staff.department_id,
+        "tenant_id": effective_tenant
     }
 
 
@@ -143,10 +152,48 @@ async def get_my_profile(current_staff: Staff = Depends(get_current_staff)):
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register_staff(
     req: StaffRegisterRequest,
+    current_admin: Staff = Depends(require_roles(["ADMINISTRATOR"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Register a new staff member and issue an authentication token."""
-    existing = await db.execute(select(Staff).where(Staff.id == req.id.upper()))
+    """
+    Register a new staff member under the authenticated administrator's tenant.
+    Enforces RBAC authorization, tenant ownership, role validity, and department isolation.
+    """
+    # 1. Enforce tenant boundary: new staff belongs to current_admin.tenant_id
+    admin_tenant = current_admin.tenant_id
+    if req.tenant_id and req.tenant_id != admin_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator cannot create staff in another tenant"
+        )
+
+    # 2. Validate role against recognized staff roles
+    role_clean = req.role.strip().upper()
+    if role_clean not in VALID_STAFF_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid staff role '{req.role}'. Valid roles: {sorted(list(VALID_STAFF_ROLES))}"
+        )
+
+    # 3. Validate department exists and belongs to current_admin.tenant_id
+    dept_id_clean = req.department_id.strip().upper()
+    dept_res = await db.execute(
+        select(Department).where(
+            and_(
+                Department.id == dept_id_clean,
+                Department.tenant_id == admin_tenant
+            )
+        )
+    )
+    dept = dept_res.scalars().first()
+    if not dept:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Referenced department {req.department_id} does not exist for tenant {admin_tenant}"
+        )
+
+    # 4. Check uniqueness of staff ID
+    existing = await db.execute(select(Staff).where(Staff.id == req.id.strip().upper()))
     if existing.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -154,11 +201,12 @@ async def register_staff(
         )
 
     new_staff = Staff(
-        id=req.id.upper(),
-        first_name=req.first_name,
-        last_name=req.last_name,
-        role=req.role.upper(),
-        department_id=req.department_id.upper(),
+        id=req.id.strip().upper(),
+        tenant_id=admin_tenant,
+        first_name=req.first_name.strip(),
+        last_name=req.last_name.strip(),
+        role=role_clean,
+        department_id=dept.id,
         specialization=req.specialization,
         status="AVAILABLE",
         current_workload=0,
@@ -168,13 +216,14 @@ async def register_staff(
     db.add(new_staff)
 
     audit = AuditLog(
+        tenant_id=admin_tenant,
         entity_type="staff",
         entity_id=new_staff.id,
         field_changed="registration",
         old_value=None,
         new_value="CREATED",
-        changed_by="SYSTEM_ADMIN",
-        change_reason=f"New staff account created: {new_staff.role}"
+        changed_by=current_admin.id,
+        change_reason=f"New staff account created: {new_staff.role} by admin {current_admin.id}"
     )
     db.add(audit)
     await db.commit()
@@ -184,7 +233,8 @@ async def register_staff(
         "sub": new_staff.id,
         "role": new_staff.role,
         "name": f"{new_staff.first_name} {new_staff.last_name}",
-        "department_id": new_staff.department_id
+        "department_id": new_staff.department_id,
+        "tenant_id": new_staff.tenant_id
     }
     access_token = create_access_token(data=token_payload)
 
@@ -194,5 +244,6 @@ async def register_staff(
         "staff_id": new_staff.id,
         "name": f"{new_staff.first_name} {new_staff.last_name}",
         "role": new_staff.role,
-        "department_id": new_staff.department_id
+        "department_id": new_staff.department_id,
+        "tenant_id": new_staff.tenant_id
     }

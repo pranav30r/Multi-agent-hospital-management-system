@@ -132,6 +132,22 @@ class BedService:
         await self.db.commit()
         await self.db.refresh(bed)
         logger.info(f"Manual Bed Booking: Bed {bed_id} RESERVED for patient {patient_id} by authenticated staff {actor_id}")
+
+        from app.services.events import event_bus
+        await event_bus.publish({
+            "event_type": "BED_RESERVED",
+            "tenant_id": tenant_id or "HOSP-DEFAULT",
+            "source": "bed_service",
+            "payload": {
+                "bed_id": bed.id,
+                "bed_type": bed.bed_type,
+                "department_id": bed.department_id,
+                "patient_id": patient_id,
+                "encounter_id": encounter_id,
+                "status": "RESERVED"
+            }
+        }, tenant_id=tenant_id or "HOSP-DEFAULT")
+
         return bed
 
     async def confirm_patient_arrival(
@@ -170,6 +186,7 @@ class BedService:
 
         # 4. Record AuditLog entry
         audit = AuditLog(
+            tenant_id=tenant_id or "HOSP-DEFAULT",
             entity_type="bed",
             entity_id=bed_id,
             field_changed="status",
@@ -183,5 +200,21 @@ class BedService:
         # 5. Commit atomic transaction
         await self.db.commit()
         await self.db.refresh(bed)
-        logger.info(f"Physical arrival confirmed: Bed {bed_id} is now OCCUPIED by {actor_id}")
+        logger.info(f"Patient Arrival Confirmed: Bed {bed_id} OCCUPIED")
+
+        from app.services.events import event_bus
+        await event_bus.publish({
+            "event_type": "BED_OCCUPIED",
+            "tenant_id": tenant_id or "HOSP-DEFAULT",
+            "source": "bed_service",
+            "payload": {
+                "bed_id": bed.id,
+                "bed_type": bed.bed_type,
+                "department_id": bed.department_id,
+                "patient_id": bed.current_patient_id,
+                "encounter_id": bed.current_encounter_id,
+                "status": "OCCUPIED"
+            }
+        }, tenant_id=tenant_id or "HOSP-DEFAULT")
+
         return bed

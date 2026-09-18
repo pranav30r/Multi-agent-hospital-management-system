@@ -110,13 +110,14 @@ async def update_staff_status(
     current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update a staff member's operational status with row lock and RBAC."""
+    """Update a staff member's operational status with row lock, tenant verification, and RBAC."""
     service = StaffService(db)
     return await service.update_staff_status(
         staff_id=staff_id,
         new_status=req.status,
         actor_id=current_staff.id,
-        reason=req.reason
+        reason=req.reason,
+        tenant_id=current_staff.tenant_id
     )
 
 
@@ -127,12 +128,13 @@ async def increment_workload(
     current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Adjust a staff member's active patient workload count with row lock."""
+    """Adjust a staff member's active patient workload count with row lock and tenant verification."""
     service = StaffService(db)
     return await service.adjust_workload(
         staff_id=staff_id,
         delta=delta,
-        actor_id=current_staff.id
+        actor_id=current_staff.id,
+        tenant_id=current_staff.tenant_id
     )
 
 
@@ -142,9 +144,12 @@ async def get_department_staffing_ratios(
     current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get current nurse:patient and doctor:patient ratios for a department."""
+    """Get current nurse:patient and doctor:patient ratios for a department within tenant boundary."""
     service = StaffService(db)
-    return await service.get_department_staffing_ratios(department_id=department_id)
+    return await service.get_department_staffing_ratios(
+        department_id=department_id,
+        tenant_id=current_staff.tenant_id
+    )
 
 
 # ─── Shifts ─────────────────────────────────────────────────────────────────
@@ -156,9 +161,13 @@ async def list_shifts(
     current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
-    """List staff shift schedules."""
+    """List staff shift schedules within tenant boundary."""
     service = StaffService(db)
-    return await service.list_shifts(staff_id=staff_id, shift_type=shift_type)
+    return await service.list_shifts(
+        staff_id=staff_id,
+        shift_type=shift_type,
+        tenant_id=current_staff.tenant_id
+    )
 
 
 @router.post("/shifts", response_model=StaffShiftResponse, status_code=201)
@@ -167,7 +176,7 @@ async def create_shift(
     current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "CHARGE_NURSE"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Schedule a new shift for a staff member."""
+    """Schedule a new shift for a staff member within tenant boundary."""
     service = StaffService(db)
     return await service.create_shift(
         staff_id=shift_in.staff_id,
@@ -175,7 +184,8 @@ async def create_shift(
         shift_type=shift_in.shift_type,
         start_time=shift_in.start_time,
         end_time=shift_in.end_time,
-        actor_id=current_staff.id
+        actor_id=current_staff.id,
+        tenant_id=current_staff.tenant_id
     )
 
 
@@ -187,9 +197,12 @@ async def list_staff_skills(
     current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all certified skills for a staff member."""
+    """List all certified skills for a staff member within tenant boundary."""
     service = StaffService(db)
-    return await service.list_staff_skills(staff_id=staff_id)
+    return await service.list_staff_skills(
+        staff_id=staff_id,
+        tenant_id=current_staff.tenant_id
+    )
 
 
 @router.post("/skills", response_model=StaffSkillResponse, status_code=201)
@@ -198,10 +211,11 @@ async def add_staff_skill(
     current_staff: Staff = Depends(require_roles(["ADMINISTRATOR"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Register a new certification/skill for a staff member."""
+    """Register a new certification/skill for a staff member within tenant boundary."""
     service = StaffService(db)
     return await service.add_staff_skill(
         staff_id=skill_in.staff_id,
         skill_name=skill_in.skill_name,
-        actor_id=current_staff.id
+        actor_id=current_staff.id,
+        tenant_id=current_staff.tenant_id
     )

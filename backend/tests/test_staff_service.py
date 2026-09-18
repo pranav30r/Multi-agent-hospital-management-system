@@ -62,7 +62,8 @@ async def test_staff_service_crud_and_lifecycle(test_db):
         updated = await service.update_staff(
             staff_id="DOC-SVC-001",
             updates={"specialization": "Emergency Medicine"},
-            actor_id="ADM-001"
+            actor_id="ADM-001",
+            tenant_id="HOSP-DEFAULT"
         )
         assert updated.specialization == "Emergency Medicine"
 
@@ -78,7 +79,8 @@ async def test_staff_status_and_workload(test_db):
             staff_id="DOC-001",
             new_status="BUSY",
             actor_id="DOC-001",
-            reason="In emergency surgery"
+            reason="In emergency surgery",
+            tenant_id="HOSP-DEFAULT"
         )
         assert staff.status == "BUSY"
 
@@ -87,17 +89,18 @@ async def test_staff_status_and_workload(test_db):
             await service.update_staff_status(
                 staff_id="DOC-001",
                 new_status="SLEEPING",
-                actor_id="DOC-001"
+                actor_id="DOC-001",
+                tenant_id="HOSP-DEFAULT"
             )
         assert exc_stat.value.status_code == 400
         assert "Invalid staff status" in exc_stat.value.detail
 
         # 3. Workload increments
-        res_work = await service.adjust_workload(staff_id="DOC-001", delta=1, actor_id="DOC-001")
+        res_work = await service.adjust_workload(staff_id="DOC-001", delta=1, actor_id="DOC-001", tenant_id="HOSP-DEFAULT")
         assert res_work["current_workload"] >= 1
 
         # 4. Decrement workload
-        res_dec = await service.adjust_workload(staff_id="DOC-001", delta=-10, actor_id="DOC-001")
+        res_dec = await service.adjust_workload(staff_id="DOC-001", delta=-10, actor_id="DOC-001", tenant_id="HOSP-DEFAULT")
         assert res_dec["current_workload"] == 0
         assert res_dec["status"] == "AVAILABLE"
 
@@ -119,7 +122,8 @@ async def test_staff_shifts_and_skills(test_db):
             shift_type="MORNING",
             start_time="06:00",
             end_time="14:00",
-            actor_id="ADM-001"
+            actor_id="ADM-001",
+            tenant_id="HOSP-DEFAULT"
         )
         assert shift.status == "SCHEDULED"
 
@@ -152,7 +156,8 @@ async def test_staff_shifts_and_skills(test_db):
         skill = await service.add_staff_skill(
             staff_id="DOC-001",
             skill_name="ACLS_CERTIFIED",
-            actor_id="ADM-001"
+            actor_id="ADM-001",
+            tenant_id="HOSP-DEFAULT"
         )
         assert skill.skill_name == "ACLS_CERTIFIED"
 
@@ -164,5 +169,5 @@ async def test_staff_shifts_and_skills(test_db):
         assert has_pals is False
 
         # 6. List skills
-        skills = await service.list_staff_skills("DOC-001")
+        skills = await service.list_staff_skills("DOC-001", tenant_id="HOSP-DEFAULT")
         assert any(s.skill_name == "ACLS_CERTIFIED" for s in skills)

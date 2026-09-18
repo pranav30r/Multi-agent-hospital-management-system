@@ -40,6 +40,21 @@ class EmergencyResponse(BaseModel):
         from_attributes = True
 
 
+class CrewRunResponse(BaseModel):
+    id: str
+    tenant_id: str
+    crew_name: str
+    trigger_event: str
+    agents_count: int
+    tasks_count: int
+    output_summary: str
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ─── Endpoints ──────────────────────────────────────────────────────────────
 
 @router.post("/declare", response_model=EmergencyResponse, status_code=status.HTTP_201_CREATED)
@@ -49,7 +64,7 @@ async def declare_emergency(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Declare a hospital-wide emergency event with RBAC enforcement.
+    Declare a hospital-wide emergency event with RBAC & tenant enforcement.
     Triggers all emergency agents and escalates risk levels.
     """
     service = EmergencyService(db)
@@ -59,7 +74,8 @@ async def declare_emergency(
         description=req.description,
         affected_departments=req.affected_departments,
         expected_patient_surge=req.expected_patient_surge,
-        actor_id=current_staff.id
+        actor_id=current_staff.id,
+        tenant_id=current_staff.tenant_id
     )
 
 
@@ -68,9 +84,9 @@ async def list_active_emergencies(
     current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get active emergency events."""
+    """Get active emergency events for the authenticated tenant."""
     service = EmergencyService(db)
-    return await service.list_active_emergencies()
+    return await service.list_active_emergencies(tenant_id=current_staff.tenant_id)
 
 
 @router.post("/{emergency_id}/resolve", response_model=EmergencyResponse)
@@ -83,5 +99,36 @@ async def resolve_emergency(
     service = EmergencyService(db)
     return await service.resolve_emergency(
         emergency_id=emergency_id,
-        actor_id=current_staff.id
+        actor_id=current_staff.id,
+        tenant_id=current_staff.tenant_id
+    )
+
+
+@router.get("/crew-runs", response_model=List[CrewRunResponse])
+async def list_emergency_crew_runs(
+    skip: int = 0,
+    limit: int = 20,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
+    """List historical collaborative emergency surge crew executions."""
+    service = EmergencyService(db)
+    return await service.list_crew_runs(tenant_id=current_staff.tenant_id, skip=skip, limit=limit)
+
+
+@router.post("/{emergency_id}/run-crew", response_model=CrewRunResponse)
+async def dispatch_emergency_crew(
+    emergency_id: str,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Dispatch the Multi-Agent Emergency Surge Crew for an active emergency event.
+    Coordinates Triage Lead, Bed Marshall, Workforce Marshall, and Logistics Officer to synthesize surge action plan.
+    """
+    service = EmergencyService(db)
+    return await service.run_emergency_crew(
+        emergency_id=emergency_id,
+        actor_id=current_staff.id,
+        tenant_id=current_staff.tenant_id
     )

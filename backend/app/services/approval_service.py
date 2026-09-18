@@ -41,8 +41,10 @@ class ApprovalService:
         if not decision:
             raise HTTPException(status_code=404, detail=f"AgentDecision {decision_id} not found")
 
+        effective_tenant = getattr(decision, "tenant_id", "HOSP-DEFAULT") or "HOSP-DEFAULT"
         item = ApprovalItem(
             decision_id=decision_id,
+            tenant_id=effective_tenant,
             agent_id=agent_id,
             action_type=action_type,
             risk_level=risk_level,
@@ -54,19 +56,45 @@ class ApprovalService:
         self.db.add(item)
         await self.db.commit()
         await self.db.refresh(item)
-        logger.info(f"Created ApprovalItem {item.id} for decision {decision_id}")
+        logger.info(f"Created ApprovalItem {item.id} for decision {decision_id} (tenant: {effective_tenant})")
+
+        from app.services.events import event_bus
+        await event_bus.publish({
+            "event_type": "APPROVAL_REQUIRED",
+            "tenant_id": effective_tenant,
+            "source": "approval_service",
+            "payload": {
+                "approval_id": item.id,
+                "decision_id": decision_id,
+                "agent_id": agent_id,
+                "action_type": action_type,
+                "risk_level": risk_level,
+                "proposed_action": proposed_action
+            }
+        }, tenant_id=effective_tenant)
+
         return item
 
-    async def list_pending_approvals(self) -> List[ApprovalItem]:
-        """List all pending items in the Human Review Queue requiring staff/clinician review."""
-        res = await self.db.execute(
-            select(ApprovalItem).where(ApprovalItem.status == "PENDING").order_by(ApprovalItem.created_at.desc())
-        )
+    async def list_pending_approvals(
+        self,
+        tenant_id: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50
+    ) -> List[ApprovalItem]:
+        """List pending items in the Human Review Queue requiring review for a tenant."""
+        stmt = select(ApprovalItem).where(ApprovalItem.status == "PENDING")
+        if tenant_id:
+            stmt = stmt.where(ApprovalItem.tenant_id == tenant_id)
+        stmt = stmt.order_by(ApprovalItem.created_at.desc()).offset(skip).limit(limit)
+        res = await self.db.execute(stmt)
         return res.scalars().all()
 
-    async def get_approval_by_id(self, approval_id: str) -> Optional[ApprovalItem]:
-        """Fetch an approval item by its unique ID."""
-        res = await self.db.execute(select(ApprovalItem).where(ApprovalItem.id == approval_id))
+    async def get_approval_by_id(self, approval_id: str, tenant_id: Optional[str] = None) -> Optional[ApprovalItem]:
+        """Fetch an approval item by its unique ID with optional tenant scope."""
+        stmt = select(ApprovalItem).where(ApprovalItem.id == approval_id)
+        if tenant_id:
+            stmt = stmt.where(ApprovalItem.tenant_id == tenant_id)
+        res = await self.db.execute(stmt)
         return res.scalars().first()
 
     async def review_approval(
@@ -76,16 +104,18 @@ class ApprovalService:
         actor_id: str,
         actor_role: str,
         modification: Optional[Dict[str, Any]] = None,
-        rejection_reason: Optional[str] = None
+        rejection_reason: Optional[str] = None,
+        tenant_id: Optional[str] = None
     ) -> ApprovalItem:
         """
         Submit human decision (APPROVE / MODIFY / REJECT) for a pending AI recommendation.
-        Enforces SELECT ... FOR UPDATE row-level lock for idempotent execution.
+        Enforces SELECT ... FOR UPDATE row-level lock for idempotent execution within tenant scope.
         State transition: PENDING -> APPROVE | MODIFY | REJECT
         """
-        res = await self.db.execute(
-            select(ApprovalItem).where(ApprovalItem.id == approval_id).with_for_update()
-        )
+        query = select(ApprovalItem).where(ApprovalItem.id == approval_id)
+        if tenant_id:
+            query = query.where(ApprovalItem.tenant_id == tenant_id)
+        res = await self.db.execute(query.with_for_update())
         item = res.scalars().first()
         if not item:
             raise HTTPException(status_code=404, detail="Approval item not found")
@@ -93,18 +123,16 @@ class ApprovalService:
             raise HTTPException(status_code=400, detail=f"Approval item is already in '{item.status}' state")
 
         action_clean = action.upper()
-        if action_clean not in ["APPROVE", "APPROVED", "MODIFY", "MODIFIED", "REJECT", "REJECTED"]:
-            raise HTTPException(status_code=400, detail=f"Invalid approval action: {action}")
+        if action_clean not in ["APPROVE", "MODIFY", "REJECT"]:
+            raise HTTPException(status_code=400, detail="Action must be APPROVE, MODIFY, or REJECT")
 
+        # Mutate approval record
         item.status = action_clean
-        item.review_action = action_clean
         item.reviewed_by = actor_id
+        item.review_action = action_clean
         item.reviewed_at = utc_now()
-
-        if action_clean in ["MODIFY", "MODIFIED"]:
-            item.modification = modification
-        elif action_clean in ["REJECT", "REJECTED"]:
-            item.rejection_reason = rejection_reason
+        item.modification = modification
+        item.rejection_reason = rejection_reason
 
         # Synchronize linked AgentDecision
         res_dec = await self.db.execute(
@@ -122,22 +150,37 @@ class ApprovalService:
         if rejection_reason:
             change_reason += f" (Reason: {rejection_reason})"
 
+        effective_tenant = tenant_id or getattr(item, "tenant_id", "HOSP-DEFAULT")
         audit = AuditLog(
+            tenant_id=effective_tenant,
             entity_type="approval",
             entity_id=approval_id,
             field_changed="status",
             old_value="PENDING",
             new_value=action_clean,
             changed_by=actor_id,
-            change_reason=change_reason,
-            approval_id=approval_id,
-            decision_id=item.decision_id
+            change_reason=change_reason
         )
         self.db.add(audit)
 
         await self.db.commit()
         await self.db.refresh(item)
         logger.info(f"APPROVAL RESOLVED: Item {approval_id} -> {action_clean} by authenticated staff {actor_id}")
+
+        from app.services.events import event_bus
+        await event_bus.publish({
+            "event_type": "APPROVAL_DECIDED",
+            "tenant_id": effective_tenant,
+            "source": "approval_service",
+            "payload": {
+                "approval_id": approval_id,
+                "decision_id": item.decision_id,
+                "action": action_clean,
+                "reviewed_by": actor_id,
+                "reviewed_at": item.reviewed_at.isoformat() if item.reviewed_at else None
+            }
+        }, tenant_id=effective_tenant)
+
         return item
 
     async def approve_action(self, approval_id: str, actor_id: str, actor_role: str) -> ApprovalItem:

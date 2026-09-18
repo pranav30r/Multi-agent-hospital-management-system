@@ -28,7 +28,13 @@ from app.services.agent_graph import (
     HospitalAgentState,
     MAX_NEGOTIATION_ROUNDS
 )
-from app.services.agent_orchestrator import PatientCoordinatorAgent, BedManagementAgent
+from app.services.agent_orchestrator import (
+    PatientCoordinatorAgent,
+    BedManagerAgent,
+    BedManagementAgent,
+    StaffSchedulerAgent,
+    StaffWorkloadAgent
+)
 
 
 @pytest.mark.asyncio
@@ -119,7 +125,7 @@ async def test_02_full_langgraph_execution_critical_decompensation(test_db):
         # 3. Verify Bed Node Output in State
         bed_out = final_state.get("bed_output")
         assert bed_out is not None
-        assert bed_out["agent_id"] in ["bed_agent", "bed_management_agent"]
+        assert bed_out["agent_id"] in ["bed_agent", "bed_manager_agent", "bed_management_agent"]
         assert bed_out["bed_type"] == "ICU"
 
         # 4. Verify Emergency Escalation Node Output in State
@@ -132,7 +138,7 @@ async def test_02_full_langgraph_execution_critical_decompensation(test_db):
         # 5. Verify Staff Node Output in State
         staff_out = final_state.get("staff_output")
         assert staff_out is not None
-        assert staff_out["agent_id"] == "staff_workload_agent"
+        assert staff_out["agent_id"] in ["staff_agent", "staff_scheduler_agent", "staff_workload_agent"]
         assert staff_out["assigned_doctor_id"] is not None
 
         # 6. Verify Patient Coordinator Node Output in State
@@ -327,9 +333,9 @@ async def test_05_langgraph_state_propagation_across_all_nodes(test_db):
 
         # Check every agent node contributed to the shared state
         assert state["triage_output"]["agent_id"] == "triage_agent"
-        assert state["bed_output"]["agent_id"] in ["bed_agent", "bed_management_agent"]
+        assert state["bed_output"]["agent_id"] in ["bed_agent", "bed_manager_agent", "bed_management_agent"]
         assert state["emergency_output"]["agent_id"] == "emergency_escalation_agent"
-        assert state["staff_output"]["agent_id"] == "staff_workload_agent"
+        assert state["staff_output"]["agent_id"] in ["staff_agent", "staff_scheduler_agent", "staff_workload_agent"]
         assert state["patient_coordinator_output"]["agent_id"] == "patient_coordinator_agent"
         assert state["coordinator_output"]["action_type"] in ["SPECIALIST_CONSULT_RECOMMENDATION", "ICU_BED_ALLOCATION_RECOMMENDATION"]
 
@@ -765,7 +771,7 @@ async def test_13_stepdown_negotiation_facility_wide_rejection(test_db):
         session.add_all([patient, encounter])
         await session.commit()
 
-        bed_agent = BedManagementAgent(session)
+        bed_agent = BedManagerAgent(session)
         proposal = {
             "transition_type": "STEP_DOWN_TRANSFER",
             "proposed_destination": "DEP-WA",

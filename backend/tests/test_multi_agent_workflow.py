@@ -8,7 +8,7 @@ from app.models.staff import Staff
 from app.models.emergency import EmergencyEvent
 from app.models.agent import AgentDecision, AgentMessage, OptimizationRun, ApprovalItem, AuditLog
 from app.services.agent_orchestrator import (
-    TriageAgent, BedManagementAgent, StaffWorkloadAgent,
+    TriageAgent, BedManagerAgent, BedManagementAgent, StaffSchedulerAgent, StaffWorkloadAgent,
     EmergencyEscalationAgent, PatientCoordinatorAgent,
     CoordinatorAgent, MultiAgentOrchestratorService
 )

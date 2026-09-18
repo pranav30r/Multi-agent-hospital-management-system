@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 from typing import Optional, List
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, Enum as SQLEnum, JSON, Text
+from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, Enum as SQLEnum, JSON, Text, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from app.utils.datetime_utils import utc_now
@@ -29,6 +29,9 @@ class Patient(Base):
 
 class Encounter(Base):
     __tablename__ = "encounters"
+    __table_args__ = (
+        Index("ix_encounters_status_arrival", "status", "arrival_time"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"ENC-{uuid.uuid4().hex[:6].upper()}")
     patient_id: Mapped[str] = mapped_column(String, ForeignKey("patients.id"), nullable=False)
@@ -36,7 +39,7 @@ class Encounter(Base):
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")             # ACTIVE, COMPLETED, CANCELLED
     
     # Current Clinical State
-    current_department_id: Mapped[str] = mapped_column(String, nullable=False)
+    current_department_id: Mapped[str] = mapped_column(String, ForeignKey("departments.id"), nullable=False)
     current_bed_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     assigned_doctor_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     assigned_nurse_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)

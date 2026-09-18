@@ -7,16 +7,22 @@ from app.database import Base
 from app.utils.datetime_utils import utc_now
 
 class AgentDecision(Base):
+    """
+    Structured AI agent decision proposals and recommendations.
+    Captures proposed actions, supporting decision rationale, confidence scores,
+    alternative options, risk levels, and resolution status.
+    """
     __tablename__ = "agent_decisions"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"DEC-{uuid.uuid4().hex[:6].upper()}")
-    agent_id: Mapped[str] = mapped_column(String(50), nullable=False)  # triage_agent, bed_agent, etc.
+    tenant_id: Mapped[str] = mapped_column(String(50), ForeignKey("tenants.id"), nullable=False, default="HOSP-DEFAULT", server_default="HOSP-DEFAULT", index=True)
+    agent_id: Mapped[str] = mapped_column(String(50), nullable=False)  # triage_agent, bed_manager_agent, staff_scheduler_agent, etc.
     event_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     encounter_id: Mapped[Optional[str]] = mapped_column(String, ForeignKey("encounters.id"), nullable=True)
     
     action_type: Mapped[str] = mapped_column(String(50), nullable=False)  # SUGGEST_TRIAGE_PRIORITY, RECOMMEND_BED, REASSIGN_STAFF
     proposed_action: Mapped[dict] = mapped_column(JSON, nullable=False)
-    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    reasoning: Mapped[str] = mapped_column(Text, nullable=False)  # Supporting decision rationale
     confidence: Mapped[float] = mapped_column(Float, default=0.90)
     alternatives: Mapped[Optional[dict]] = mapped_column(JSON, default=list)
     
@@ -71,9 +77,14 @@ class OptimizationRun(Base):
     computation_time_ms: Mapped[int] = mapped_column(Integer, default=25)
 
 class CrewRun(Base):
+    """
+    Multi-agent crew execution summaries for CrewAI-based workflows,
+    including participating agents, task counts, execution status, and output summaries.
+    """
     __tablename__ = "crew_runs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"CRW-{uuid.uuid4().hex[:6].upper()}")
+    tenant_id: Mapped[str] = mapped_column(String(50), ForeignKey("tenants.id"), nullable=False, default="HOSP-DEFAULT", server_default="HOSP-DEFAULT", index=True)
     crew_name: Mapped[str] = mapped_column(String(50), nullable=False)  # EmergencySurgeCrew
     trigger_event: Mapped[str] = mapped_column(String(50), nullable=False)
     agents_count: Mapped[int] = mapped_column(Integer, default=3)
@@ -96,6 +107,7 @@ class ApprovalItem(Base):
     __tablename__ = "approval_items"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"APR-{uuid.uuid4().hex[:6].upper()}")
+    tenant_id: Mapped[str] = mapped_column(String(50), ForeignKey("tenants.id"), nullable=False, default="HOSP-DEFAULT", server_default="HOSP-DEFAULT", index=True)
     decision_id: Mapped[str] = mapped_column(String, ForeignKey("agent_decisions.id"), nullable=False)
     agent_id: Mapped[str] = mapped_column(String(50), nullable=False)
     action_type: Mapped[str] = mapped_column(String(50), nullable=False)

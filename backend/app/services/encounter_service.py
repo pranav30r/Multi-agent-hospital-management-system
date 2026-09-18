@@ -35,39 +35,66 @@ class EncounterService:
         temperature_f: Optional[float] = None,
         pain_level: Optional[int] = None,
         respiratory_rate: Optional[int] = None,
-        gcs_score: Optional[int] = None
+        gcs_score: Optional[int] = None,
+        tenant_id: Optional[str] = None
     ) -> Encounter:
         """
         Create a new clinical intake encounter for a validated patient.
         State: -> ACTIVE (patient_status: REGISTERED)
         """
-        # 1. Confirm patient exists
-        p_res = await self.db.execute(select(Patient).where(Patient.id == patient_id))
+        if not tenant_id:
+            raise HTTPException(status_code=400, detail="tenant_id is required to create an encounter")
+
+        # 1. Confirm patient exists and belongs to authenticated tenant
+        p_query = select(Patient).where(
+            and_(
+                Patient.id == patient_id,
+                Patient.tenant_id == tenant_id
+            )
+        )
+        p_res = await self.db.execute(p_query)
         patient = p_res.scalars().first()
         if not patient:
             raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
 
-        # 2. Validate department reference dynamically from database
+        # 2. Validate department reference dynamically from database within tenant
         target_dept_id = current_department_id
         if target_dept_id:
-            d_res = await self.db.execute(select(Department.id).where(Department.id == target_dept_id))
+            d_res = await self.db.execute(
+                select(Department.id).where(
+                    and_(
+                        Department.id == target_dept_id,
+                        Department.tenant_id == tenant_id
+                    )
+                )
+            )
             dept = d_res.scalars().first()
             if not dept:
-                raise HTTPException(status_code=404, detail=f"Department {target_dept_id} not found")
+                raise HTTPException(status_code=400, detail=f"Department {target_dept_id} does not exist for tenant {tenant_id}")
         else:
-            # Query default emergency department dynamically by code
-            d_res = await self.db.execute(select(Department.id).where(Department.code.in_(["ER", "ED", "EMERGENCY"])))
+            # Query default emergency department dynamically by code within tenant
+            d_res = await self.db.execute(
+                select(Department.id).where(
+                    and_(
+                        Department.code.in_(["ER", "ED", "EMERGENCY"]),
+                        Department.tenant_id == tenant_id
+                    )
+                )
+            )
             target_dept_id = d_res.scalars().first()
             if not target_dept_id:
-                d_fallback = await self.db.execute(select(Department.id).limit(1))
+                d_fallback = await self.db.execute(
+                    select(Department.id).where(Department.tenant_id == tenant_id).limit(1)
+                )
                 target_dept_id = d_fallback.scalars().first()
+
+        type_clean = encounter_type.upper() if encounter_type else "INPATIENT"
 
         encounter = Encounter(
             patient_id=patient_id,
             chief_complaint=chief_complaint,
-            encounter_type=encounter_type.upper(),
-            status="ACTIVE",
-            current_department_id=target_dept_id,
+            encounter_type=type_clean,
+            current_department_id=target_dept_id or "DEP-ER",
             heart_rate=heart_rate,
             bp_systolic=bp_systolic,
             bp_diastolic=bp_diastolic,
@@ -76,6 +103,7 @@ class EncounterService:
             pain_level=pain_level,
             respiratory_rate=respiratory_rate,
             gcs_score=gcs_score,
+            status="ACTIVE",
             patient_status="REGISTERED",
             arrival_time=utc_now(),
             registration_time=utc_now()
@@ -83,32 +111,51 @@ class EncounterService:
         self.db.add(encounter)
         await self.db.flush()
 
+        # Audit trail creation
         audit = AuditLog(
+            tenant_id=tenant_id,
             entity_type="encounter",
             entity_id=encounter.id,
-            field_changed="intake",
+            field_changed="creation",
             old_value=None,
-            new_value="REGISTERED",
+            new_value="ACTIVE",
             changed_by=actor_id,
-            change_reason=f"Encounter created for patient {patient_id} ({chief_complaint})"
+            change_reason=f"Created encounter for patient {patient_id}: {chief_complaint[:50]}"
         )
         self.db.add(audit)
 
         await self.db.commit()
         await self.db.refresh(encounter)
-        logger.info(f"Created intake encounter {encounter.id} for patient {patient_id} by {actor_id}")
+        logger.info(f"Created encounter {encounter.id} for patient {patient_id} by {actor_id}")
         return encounter
 
-    async def get_encounter_by_id(self, encounter_id: str) -> Optional[Encounter]:
-        """Fetch encounter details by ID."""
-        result = await self.db.execute(select(Encounter).where(Encounter.id == encounter_id))
+    async def get_encounter_by_id(self, encounter_id: str, tenant_id: Optional[str] = None) -> Optional[Encounter]:
+        """Fetch encounter details by ID with optional tenant scope."""
+        stmt = select(Encounter).where(Encounter.id == encounter_id)
+        if tenant_id:
+            stmt = stmt.join(Patient, Encounter.patient_id == Patient.id).where(Patient.tenant_id == tenant_id)
+        result = await self.db.execute(stmt)
         return result.scalars().first()
 
-    async def list_active_encounters(self) -> List[Encounter]:
-        """Query all currently active hospital encounters."""
-        result = await self.db.execute(
-            select(Encounter).where(Encounter.status == "ACTIVE").order_by(desc(Encounter.arrival_time))
-        )
+    async def list_active_encounters(
+        self,
+        tenant_id: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50
+    ) -> List[Encounter]:
+        """Query all currently active hospital encounters strictly scoped to tenant."""
+        if not tenant_id:
+            raise HTTPException(status_code=400, detail="tenant_id is required to list active encounters")
+
+        stmt = select(Encounter).join(
+            Patient, Encounter.patient_id == Patient.id
+        ).where(
+            and_(
+                Encounter.status == "ACTIVE",
+                Patient.tenant_id == tenant_id
+            )
+        ).order_by(desc(Encounter.arrival_time)).offset(skip).limit(limit)
+        result = await self.db.execute(stmt)
         return result.scalars().all()
 
     async def list_patient_encounters(self, patient_id: str) -> List[Encounter]:

@@ -3,8 +3,8 @@ LangGraph Multi-Agent Hospital State Graph with Structured Inter-Agent Negotiati
 
 Provides a real LangGraph StateGraph implementation coordinating the 5 specialized operational agents:
 1. Triage Agent (Acuity, ESI scoring, Red Flags)
-2. Bed Management Agent (Capacity, Telemetry, Isolation, Alternative Counter-Proposals)
-3. Staff Workload Agent (Doctor/Nurse load balancing, Rebalanced Assignments)
+2. Bed Manager Agent (Capacity, Telemetry, Isolation, Alternative Counter-Proposals)
+3. Staff Scheduler Agent (Doctor/Nurse load balancing, Rebalanced Assignments)
 4. Emergency Escalation Agent (Physiological decompensation, Code Blue / RRT, Negotiation Evaluation)
 5. Patient Coordinator Agent (Clinical handoff briefs, discharge readiness, missing inputs)
 6. Coordinator Agent (Conflict Detection, Bounded Negotiation Synthesis, Risk Gating, HITL Approval)
@@ -20,7 +20,9 @@ from langgraph.graph import StateGraph, START, END
 from app.models.patient import Patient, Encounter
 from app.services.agent_orchestrator import (
     TriageAgent,
+    BedManagerAgent,
     BedManagementAgent,
+    StaffSchedulerAgent,
     StaffWorkloadAgent,
     EmergencyEscalationAgent,
     PatientCoordinatorAgent,
@@ -104,8 +106,8 @@ class HospitalLangGraphOrchestrator:
 
         # Bind existing domain agent services (no duplicate algorithms)
         self.triage_agent = TriageAgent(db)
-        self.bed_agent = BedManagementAgent(db)
-        self.staff_agent = StaffWorkloadAgent(db)
+        self.bed_agent = BedManagerAgent(db)
+        self.staff_agent = StaffSchedulerAgent(db)
         self.emergency_agent = EmergencyEscalationAgent(db)
         self.patient_coordinator_agent = PatientCoordinatorAgent(db)
         self.coordinator_agent = CoordinatorAgent(db)
@@ -132,7 +134,7 @@ class HospitalLangGraphOrchestrator:
             }
 
     async def bed_node(self, state: HospitalAgentState) -> Dict[str, Any]:
-        """Node 2: Executes BedManagementAgent evaluate method."""
+        """Node 2: Executes BedManagerAgent evaluate method."""
         if state.get("status") == "FAILED" or not state.get("triage_output"):
             return {}
         try:
@@ -140,7 +142,7 @@ class HospitalLangGraphOrchestrator:
             output = await self.bed_agent.evaluate(state["triage_output"], self.encounter, tenant_id=tenant_id)
             return {"bed_output": output}
         except Exception as e:
-            logger.exception(f"BedManagementAgent node failed for encounter {self.encounter.id}: {e}")
+            logger.exception(f"BedManagerAgent node failed for encounter {self.encounter.id}: {e}")
             return {
                 "status": "FAILED",
                 "error": str(e),
@@ -164,7 +166,7 @@ class HospitalLangGraphOrchestrator:
             }
 
     async def staff_node(self, state: HospitalAgentState) -> Dict[str, Any]:
-        """Node 4: Executes StaffWorkloadAgent evaluate method (depends on triage and bed capacity)."""
+        """Node 4: Executes StaffSchedulerAgent evaluate method (depends on triage and bed capacity)."""
         if state.get("status") == "FAILED" or not state.get("triage_output") or not state.get("bed_output"):
             return {}
         try:
@@ -177,7 +179,7 @@ class HospitalLangGraphOrchestrator:
             )
             return {"staff_output": output}
         except Exception as e:
-            logger.exception(f"StaffWorkloadAgent node failed for encounter {self.encounter.id}: {e}")
+            logger.exception(f"StaffSchedulerAgent node failed for encounter {self.encounter.id}: {e}")
             return {
                 "status": "FAILED",
                 "error": str(e),

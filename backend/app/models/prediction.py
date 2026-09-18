@@ -7,6 +7,10 @@ from app.database import Base
 from app.utils.datetime_utils import utc_now
 
 class PredictionRun(Base):
+    """
+    Operational forecasting run outputs for ICU demand, ED surge, and bed-turnover estimation,
+    with model/version metadata, input features, prediction outputs, confidence scores, and inference metrics.
+    """
     __tablename__ = "prediction_runs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"PRD-{uuid.uuid4().hex[:6].upper()}")

@@ -12,14 +12,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger("hospital_system")
 
+from app.core.redis import redis_manager
+from app.routers.events import ws_manager
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context manager handling startup & shutdown."""
     logger.info("Initializing Hospital Command Center Backend...")
     await init_db()
     logger.info("Database connection established.")
+    await redis_manager.initialize()
     yield
     logger.info("Shutting down Hospital Command Center Backend...")
+    await ws_manager.close_all()
+    await redis_manager.close()
 
 is_production = settings.ENVIRONMENT.lower() in ["production", "prod"]
 show_docs = (not is_production) or settings.ENABLE_PROD_DOCS
@@ -107,8 +113,8 @@ async def root():
 @app.get(f"{settings.API_V1_STR}/health", tags=["System"])
 async def health_check():
     """
-    Active Health Probe: Executes async ping against the configured database.
-    Returns 200 OK with connected status, or 503 Service Unavailable if degraded.
+    Active Health Probe: Executes async ping against database and Redis.
+    Returns 200 OK if healthy/operational, or 503 Service Unavailable if database degraded.
     """
     db_status = "connected"
     is_healthy = True
@@ -121,9 +127,13 @@ async def health_check():
         db_status = "unreachable"
         is_healthy = False
 
+    redis_alive = await redis_manager.ping()
+    redis_status = "connected" if redis_alive else "unreachable"
+
     payload = {
         "status": "healthy" if is_healthy else "degraded",
         "database": db_status,
+        "redis": redis_status,
         "environment": settings.ENVIRONMENT,
         "redis_configured": bool(settings.REDIS_URL),
         "llm_enabled": bool(settings.OPENAI_API_KEY or settings.GROQ_API_KEY)

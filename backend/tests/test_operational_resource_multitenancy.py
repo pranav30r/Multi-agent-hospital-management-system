@@ -17,7 +17,7 @@ from app.models.staff import Staff
 from app.models.equipment import Equipment
 from app.models.emergency import EmergencyEvent
 from app.models.patient import Patient, Encounter
-from app.services.agent_orchestrator import BedManagementAgent
+from app.services.agent_orchestrator import BedManagerAgent, BedManagementAgent
 from app.services.bed_service import BedService
 from app.services.equipment_service import EquipmentService
 from app.services.staff_service import StaffService
@@ -145,7 +145,7 @@ async def test_bed_management_agent_tenant_isolation(test_db):
         session.add_all([pat_a, enc_a, pat_b, enc_b])
         await session.commit()
 
-        bed_agent = BedManagementAgent(session)
+        bed_agent = BedManagerAgent(session)
         
         # Evaluate for Tenant A in ICU (where Tenant A has 0 available beds, but Tenant B has 2)
         triage_out_icu = {
@@ -181,13 +181,13 @@ async def test_bed_management_agent_tenant_isolation(test_db):
 @pytest.mark.asyncio
 async def test_bed_management_agent_discharge_stepdown_cross_tenant_isolation(test_db):
     """
-    Ensure BedManagementAgent.evaluate_discharge_stepdown_proposal() never counter-proposes or allocates
+    Ensure BedManagerAgent.evaluate_discharge_stepdown_proposal() never counter-proposes or allocates
     a bed from Tenant B when evaluating for Tenant A, even if Tenant A target and alternative wards are full.
     """
     async with test_db() as session:
         await setup_multi_tenant_resources(session)
 
-        bed_agent = BedManagementAgent(session)
+        bed_agent = BedManagerAgent(session)
 
         # Step-down proposal for Tenant A into General Ward (General Ward A is full; General Ward B has 3 available beds)
         result_a = await bed_agent.evaluate_discharge_stepdown_proposal(

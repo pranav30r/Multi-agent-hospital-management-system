@@ -105,12 +105,19 @@ async def start_workflow_instance(
 async def list_workflow_instances(
     encounter_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None, description="ACTIVE, COMPLETED, CANCELLED"),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(50, ge=1, le=100, description="Max number of records to return"),
     current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
-    """List clinical workflow instances with optional filtering."""
+    """List clinical workflow instances with optional filtering and pagination."""
     service = WorkflowService(db)
-    return await service.list_instances(encounter_id=encounter_id, status=status)
+    return await service.list_instances(
+        encounter_id=encounter_id,
+        status=status,
+        skip=skip,
+        limit=limit
+    )
 
 
 @router.get("/instances/{instance_id}", response_model=WorkflowInstanceResponse)
@@ -161,13 +168,17 @@ async def list_clinical_tasks(
     encounter_id: Optional[str] = Query(None),
     assigned_to_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None, description="PENDING, IN_PROGRESS, COMPLETED"),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(50, ge=1, le=100, description="Max number of records to return"),
     current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
-    """Query scheduled and active clinical workflow tasks."""
+    """Query scheduled and active clinical workflow tasks with pagination."""
     service = WorkflowService(db)
     return await service.list_tasks(
         encounter_id=encounter_id,
         assigned_to_id=assigned_to_id,
-        status=status
+        status=status,
+        skip=skip,
+        limit=limit
     )

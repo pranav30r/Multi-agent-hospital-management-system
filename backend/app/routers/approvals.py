@@ -24,6 +24,7 @@ class ApprovalActionRequest(BaseModel):
 
 class ApprovalItemResponse(BaseModel):
     id: str
+    tenant_id: str = "HOSP-DEFAULT"
     decision_id: str
     agent_id: str
     action_type: str
@@ -45,12 +46,14 @@ class ApprovalItemResponse(BaseModel):
 
 @router.get("/pending", response_model=List[ApprovalItemResponse])
 async def list_pending_approvals(
+    skip: int = 0,
+    limit: int = 50,
     current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all pending items in the Human Review Queue requiring staff/clinician approval."""
+    """List pending items in the Human Review Queue requiring staff/clinician approval for the authenticated tenant."""
     service = ApprovalService(db)
-    return await service.list_pending_approvals()
+    return await service.list_pending_approvals(tenant_id=current_staff.tenant_id, skip=skip, limit=limit)
 
 
 @router.post("/{approval_id}/review", response_model=ApprovalItemResponse)
@@ -62,7 +65,7 @@ async def review_approval_item(
 ):
     """
     Submit human decision (APPROVE / MODIFY / REJECT) for a pending AI recommendation with pessimistic locking.
-    Enforces that reviewer identity is derived strictly from the authenticated JWT.
+    Enforces that reviewer identity and tenant are derived strictly from the authenticated JWT.
     """
     service = ApprovalService(db)
     return await service.review_approval(
@@ -71,5 +74,6 @@ async def review_approval_item(
         modification=req.modification,
         rejection_reason=req.rejection_reason,
         actor_id=current_staff.id,
-        actor_role=current_staff.role
+        actor_role=current_staff.role,
+        tenant_id=current_staff.tenant_id
     )

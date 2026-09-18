@@ -163,15 +163,19 @@ class WorkflowService:
     async def list_instances(
         self,
         encounter_id: Optional[str] = None,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50
     ) -> List[Dict[str, Any]]:
-        """List clinical workflow instances with optional filtering."""
+        """List clinical workflow instances with optional filtering and pagination."""
         query = select(WorkflowInstance)
         if encounter_id:
             query = query.where(WorkflowInstance.encounter_id == encounter_id)
         if status:
             query = query.where(WorkflowInstance.status == status.upper())
-        result = await self.db.execute(query.order_by(desc(WorkflowInstance.started_at)))
+        result = await self.db.execute(
+            query.order_by(desc(WorkflowInstance.started_at)).offset(skip).limit(limit)
+        )
         instances = result.scalars().all()
         out = []
         for inst in instances:
@@ -551,9 +555,11 @@ class WorkflowService:
         self,
         encounter_id: Optional[str] = None,
         assigned_to_id: Optional[str] = None,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50
     ) -> List[Task]:
-        """Query scheduled and active clinical workflow tasks."""
+        """Query scheduled and active clinical workflow tasks with pagination."""
         query = select(Task)
         if encounter_id:
             query = query.where(Task.encounter_id == encounter_id)
@@ -561,7 +567,9 @@ class WorkflowService:
             query = query.where(Task.assigned_to_staff_id == assigned_to_id)
         if status:
             query = query.where(Task.status == status.upper())
-        result = await self.db.execute(query.order_by(desc(Task.priority), desc(Task.created_at)))
+        result = await self.db.execute(
+            query.order_by(desc(Task.priority), desc(Task.created_at)).offset(skip).limit(limit)
+        )
         return result.scalars().all()
 
     async def create_task(

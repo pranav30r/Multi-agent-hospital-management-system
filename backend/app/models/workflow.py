@@ -63,10 +63,10 @@ class Transfer(Base):
     encounter_id: Mapped[str] = mapped_column(String, ForeignKey("encounters.id"), nullable=False)
     patient_id: Mapped[str] = mapped_column(String, ForeignKey("patients.id"), nullable=False)
     
-    from_department_id: Mapped[str] = mapped_column(String, nullable=False)
-    to_department_id: Mapped[str] = mapped_column(String, nullable=False)
-    from_bed_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    to_bed_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    from_department_id: Mapped[str] = mapped_column(String, ForeignKey("departments.id"), nullable=False)
+    to_department_id: Mapped[str] = mapped_column(String, ForeignKey("departments.id"), nullable=False)
+    from_bed_id: Mapped[Optional[str]] = mapped_column(String, ForeignKey("beds.id"), nullable=True)
+    to_bed_id: Mapped[Optional[str]] = mapped_column(String, ForeignKey("beds.id"), nullable=True)
     
     reason: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="REQUESTED")  # REQUESTED, APPROVED, COMPLETED, CANCELLED
@@ -78,7 +78,7 @@ class Discharge(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"DSC-{uuid.uuid4().hex[:6].upper()}")
     encounter_id: Mapped[str] = mapped_column(String, ForeignKey("encounters.id"), nullable=False)
     patient_id: Mapped[str] = mapped_column(String, ForeignKey("patients.id"), nullable=False)
-    discharging_doctor_id: Mapped[str] = mapped_column(String, nullable=False)
+    discharging_doctor_id: Mapped[str] = mapped_column(String, ForeignKey("staff.id"), nullable=False)
     
     summary_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     follow_up_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

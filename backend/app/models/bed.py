@@ -1,13 +1,16 @@
 from datetime import datetime
 import uuid
 from typing import Optional
-from sqlalchemy import String, DateTime, ForeignKey, Boolean
+from sqlalchemy import String, DateTime, ForeignKey, Boolean, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.utils.datetime_utils import utc_now
 
 class Bed(Base):
     __tablename__ = "beds"
+    __table_args__ = (
+        Index("ix_beds_dept_status", "department_id", "status"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # BED-ICU-01, BED-ER-02
     department_id: Mapped[str] = mapped_column(String, ForeignKey("departments.id"), nullable=False)

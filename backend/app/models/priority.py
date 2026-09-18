@@ -9,9 +9,9 @@ from app.utils.datetime_utils import utc_now
 
 class ClinicalPriorityRecommendation(Base):
     """
-    Domain entity representing deterministic clinical priority classification and operational
-    routing recommendations (e.g. EMERGENCY_TRIAGE, IMMEDIATE_DOCTOR_REVIEW, NURSE_TRIAGE).
-    Maintains complete explainability and physician acknowledgement/override audit trails.
+    Domain entity representing ESI-based triage priority classification and operational routing recommendations
+    (e.g. EMERGENCY_TRIAGE, IMMEDIATE_DOCTOR_REVIEW, NURSE_TRIAGE, STANDARD_OPD_QUEUE).
+    Maintains complete explainability, clinical rationale, and physician acknowledgement/override audit trails.
     """
     __tablename__ = "clinical_priority_recommendations"
 

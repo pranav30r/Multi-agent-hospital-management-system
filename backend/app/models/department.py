@@ -1,16 +1,19 @@
 from datetime import datetime
-from sqlalchemy import String, Integer, DateTime, ForeignKey
+from sqlalchemy import String, Integer, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.utils.datetime_utils import utc_now
 
 class Department(Base):
     __tablename__ = "departments"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_departments_tenant_code"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # DEP-ER, DEP-ICU, etc.
     tenant_id: Mapped[str] = mapped_column(String(50), ForeignKey("tenants.id"), nullable=False, default="HOSP-DEFAULT", server_default="HOSP-DEFAULT", index=True)
     name: Mapped[str] = mapped_column(String(50), nullable=False)
-    code: Mapped[str] = mapped_column(String(10), nullable=False, unique=True)
+    code: Mapped[str] = mapped_column(String(10), nullable=False)
     description: Mapped[str] = mapped_column(String(200), nullable=True)
     total_beds: Mapped[int] = mapped_column(Integer, default=0)
     current_occupancy: Mapped[int] = mapped_column(Integer, default=0)

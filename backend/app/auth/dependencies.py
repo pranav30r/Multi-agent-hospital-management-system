@@ -38,7 +38,7 @@ async def get_current_staff(
     payload: dict = Depends(get_current_user_token),
     db: AsyncSession = Depends(get_db)
 ) -> Staff:
-    """Resolves authenticated Staff record from database using token subject claim."""
+    """Resolves authenticated Staff record from database using token subject claim and verifies tenant authority."""
     staff_id = payload.get("sub")
     result = await db.execute(select(Staff).where(Staff.id == staff_id))
     staff = result.scalars().first()
@@ -47,6 +47,20 @@ async def get_current_staff(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"User/Staff {staff_id} not found"
         )
+
+    # Verify that the JWT contains tenant_id and matches the authoritative Staff.tenant_id
+    token_tenant = payload.get("tenant_id")
+    if staff.tenant_id:
+        if not token_tenant or token_tenant != staff.tenant_id:
+            logger.warning(
+                f"Tenant validation failed for staff {staff.id}: "
+                f"token_tenant='{token_tenant}', db_tenant='{staff.tenant_id}'"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token tenant does not match authoritative staff tenant",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
     return staff
 
 def require_roles(allowed_roles: List[str]):
@@ -81,13 +95,10 @@ async def get_optional_staff(
 
 
 async def get_current_tenant(
-    payload: dict = Depends(get_current_user_token)
+    staff: Staff = Depends(get_current_staff)
 ) -> str:
     """
-    Extracts verified tenant context from JWT claims.
-    Server-side identity boundary; client-provided tenant headers/bodies are not trusted.
+    Returns authoritative tenant context directly from the verified database Staff record.
+    Server-side identity boundary; client-provided tenant headers/bodies/claims are not trusted.
     """
-    tenant_id = payload.get("tenant_id")
-    if not tenant_id:
-        return "HOSP-DEFAULT"
-    return tenant_id
+    return staff.tenant_id

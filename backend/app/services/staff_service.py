@@ -160,11 +160,20 @@ class StaffService:
         self,
         staff_id: str,
         updates: Dict[str, Any],
-        actor_id: str
+        actor_id: str,
+        tenant_id: Optional[str] = None
     ) -> Staff:
-        """Update staff attributes with row lock, department validation, and audit."""
+        """Update staff attributes with row lock, department validation, tenant scope, and audit."""
+        if not tenant_id:
+            raise HTTPException(status_code=400, detail="tenant_id is required to update staff")
+
         result = await self.db.execute(
-            select(Staff).where(Staff.id == staff_id).with_for_update()
+            select(Staff).where(
+                and_(
+                    Staff.id == staff_id,
+                    Staff.tenant_id == tenant_id
+                )
+            ).with_for_update()
         )
         staff = result.scalars().first()
         if not staff:
@@ -172,10 +181,15 @@ class StaffService:
 
         if "department_id" in updates and updates["department_id"]:
             dept_res = await self.db.execute(
-                select(Department.id).where(Department.id == updates["department_id"])
+                select(Department.id).where(
+                    and_(
+                        Department.id == updates["department_id"],
+                        Department.tenant_id == tenant_id
+                    )
+                )
             )
             if not dept_res.scalars().first():
-                raise HTTPException(status_code=400, detail=f"Referenced department {updates['department_id']} does not exist")
+                raise HTTPException(status_code=400, detail=f"Referenced department {updates['department_id']} does not exist for tenant {tenant_id}")
             staff.department_id = updates["department_id"]
 
         if "role" in updates and updates["role"]:
@@ -189,6 +203,7 @@ class StaffService:
                 setattr(staff, attr, updates[attr])
 
         audit = AuditLog(
+            tenant_id=tenant_id,
             entity_type="staff",
             entity_id=staff_id,
             field_changed="profile_update",
@@ -203,13 +218,13 @@ class StaffService:
         await self.db.refresh(staff)
         return staff
 
-    async def get_staff_by_department(self, department_id: str) -> List[Staff]:
+    async def get_staff_by_department(self, department_id: str, tenant_id: Optional[str] = None) -> List[Staff]:
         """Query staff assigned to a specific department."""
-        return await self.list_staff(department_id=department_id)
+        return await self.list_staff(department_id=department_id, tenant_id=tenant_id)
 
-    async def get_staff_by_role(self, role: str) -> List[Staff]:
+    async def get_staff_by_role(self, role: str, tenant_id: Optional[str] = None) -> List[Staff]:
         """Query staff by clinical or operational role."""
-        return await self.list_staff(role=role)
+        return await self.list_staff(role=role, tenant_id=tenant_id)
 
     async def find_available_staff(
         self,
@@ -248,11 +263,20 @@ class StaffService:
         staff_id: str,
         new_status: str,
         actor_id: str,
-        reason: str = "Manual status update"
+        reason: str = "Manual status update",
+        tenant_id: Optional[str] = None
     ) -> Staff:
-        """Update operational status with pessimistic row lock and audit."""
+        """Update operational status with pessimistic row lock, tenant scope, and audit."""
+        if not tenant_id:
+            raise HTTPException(status_code=400, detail="tenant_id is required for staff status update")
+
         result = await self.db.execute(
-            select(Staff).where(Staff.id == staff_id).with_for_update()
+            select(Staff).where(
+                and_(
+                    Staff.id == staff_id,
+                    Staff.tenant_id == tenant_id
+                )
+            ).with_for_update()
         )
         staff = result.scalars().first()
         if not staff:
@@ -269,6 +293,7 @@ class StaffService:
         staff.status = status_clean
 
         audit = AuditLog(
+            tenant_id=tenant_id,
             entity_type="staff",
             entity_id=staff_id,
             field_changed="status",
@@ -288,15 +313,23 @@ class StaffService:
         self,
         staff_id: str,
         delta: int,
-        actor_id: str
+        actor_id: str,
+        tenant_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Adjust staff patient workload count with pessimistic lock.
+        Adjust staff patient workload count with pessimistic lock and tenant scope.
         Auto-sets status to BUSY when reaching max workload, or AVAILABLE when capacity frees up.
         """
-        result = await self.db.execute(
-            select(Staff).where(Staff.id == staff_id).with_for_update()
+        if not tenant_id:
+            raise HTTPException(status_code=400, detail="tenant_id is required for workload adjustment")
+
+        query = select(Staff).where(
+            and_(
+                Staff.id == staff_id,
+                Staff.tenant_id == tenant_id
+            )
         )
+        result = await self.db.execute(query.with_for_update())
         staff = result.scalars().first()
         if not staff:
             raise HTTPException(status_code=404, detail=f"Staff member {staff_id} not found")
@@ -319,6 +352,7 @@ class StaffService:
             staff.status = "AVAILABLE"
 
         audit = AuditLog(
+            tenant_id=tenant_id,
             entity_type="staff",
             entity_id=staff_id,
             field_changed="workload",
@@ -333,32 +367,38 @@ class StaffService:
         await self.db.refresh(staff)
         logger.info(f"Staff {staff_id} workload: {old_load} → {staff.current_workload} by {actor_id}")
         return {
-            "id": staff.id,
+            "staff_id": staff_id,
+            "status": staff.status,
             "current_workload": staff.current_workload,
             "max_workload": staff.max_workload,
-            "status": staff.status
+            "utilization_pct": round((staff.current_workload / staff.max_workload) * 100, 1)
         }
 
-    async def get_department_staffing_ratios(self, department_id: str) -> Dict[str, Any]:
+    async def get_department_staffing_ratios(self, department_id: str, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         """Calculate current nurse:patient and doctor:patient staffing ratios for a department."""
-        dept_res = await self.db.execute(select(Department.id).where(Department.id == department_id))
+        dept_query = select(Department.id).where(Department.id == department_id)
+        if tenant_id:
+            dept_query = dept_query.where(Department.tenant_id == tenant_id)
+        dept_res = await self.db.execute(dept_query)
         if not dept_res.scalars().first():
             raise HTTPException(status_code=404, detail=f"Department {department_id} not found")
 
-        doctors = await self.db.execute(
-            select(Staff).where(
-                Staff.department_id == department_id,
-                Staff.role == "DOCTOR",
-                Staff.status.in_(["AVAILABLE", "BUSY"])
-            )
+        doc_query = select(Staff).where(
+            Staff.department_id == department_id,
+            Staff.role == "DOCTOR",
+            Staff.status.in_(["AVAILABLE", "BUSY"])
         )
-        nurses = await self.db.execute(
-            select(Staff).where(
-                Staff.department_id == department_id,
-                Staff.role.in_(["NURSE", "CHARGE_NURSE"]),
-                Staff.status.in_(["AVAILABLE", "BUSY"])
-            )
+        nurse_query = select(Staff).where(
+            Staff.department_id == department_id,
+            Staff.role.in_(["NURSE", "CHARGE_NURSE"]),
+            Staff.status.in_(["AVAILABLE", "BUSY"])
         )
+        if tenant_id:
+            doc_query = doc_query.where(Staff.tenant_id == tenant_id)
+            nurse_query = nurse_query.where(Staff.tenant_id == tenant_id)
+
+        doctors = await self.db.execute(doc_query)
+        nurses = await self.db.execute(nurse_query)
 
         doc_list = doctors.scalars().all()
         nurse_list = nurses.scalars().all()
@@ -382,16 +422,27 @@ class StaffService:
         shift_type: str,
         start_time: str,
         end_time: str,
-        actor_id: str
+        actor_id: str,
+        tenant_id: Optional[str] = None
     ) -> StaffShift:
-        """Schedule a new shift for a verified staff member."""
-        staff = await self.get_staff_by_id(staff_id)
+        """Schedule a new shift for a verified staff member within tenant boundary."""
+        if not tenant_id:
+            raise HTTPException(status_code=400, detail="tenant_id is required to create a shift")
+
+        staff = await self.get_staff_by_id(staff_id, tenant_id=tenant_id)
         if not staff:
             raise HTTPException(status_code=404, detail=f"Staff member {staff_id} not found")
 
-        dept_res = await self.db.execute(select(Department.id).where(Department.id == department_id))
+        dept_res = await self.db.execute(
+            select(Department.id).where(
+                and_(
+                    Department.id == department_id,
+                    Department.tenant_id == tenant_id
+                )
+            )
+        )
         if not dept_res.scalars().first():
-            raise HTTPException(status_code=400, detail=f"Referenced department {department_id} does not exist")
+            raise HTTPException(status_code=400, detail=f"Referenced department {department_id} does not exist for tenant {tenant_id}")
 
         shift_type_clean = shift_type.upper()
         if shift_type_clean not in VALID_SHIFT_TYPES:
@@ -411,6 +462,7 @@ class StaffService:
         self.db.add(shift)
 
         audit = AuditLog(
+            tenant_id=tenant_id,
             entity_type="staff_shift",
             entity_id=staff_id,
             field_changed="shift_schedule",
@@ -435,10 +487,13 @@ class StaffService:
         self,
         staff_id: Optional[str] = None,
         department_id: Optional[str] = None,
-        shift_type: Optional[str] = None
+        shift_type: Optional[str] = None,
+        tenant_id: Optional[str] = None
     ) -> List[StaffShift]:
-        """List staff shift schedules with optional filters."""
+        """List staff shift schedules with optional filters and tenant scope."""
         query = select(StaffShift)
+        if tenant_id:
+            query = query.join(Staff, StaffShift.staff_id == Staff.id).where(Staff.tenant_id == tenant_id)
         if staff_id:
             query = query.where(StaffShift.staff_id == staff_id)
         if department_id:
@@ -493,10 +548,14 @@ class StaffService:
         self,
         staff_id: str,
         skill_name: str,
-        actor_id: str
+        actor_id: str,
+        tenant_id: Optional[str] = None
     ) -> StaffSkill:
-        """Register a new certified skill for a staff member and update skills list."""
-        staff = await self.get_staff_by_id(staff_id)
+        """Register a new certified skill for a staff member within tenant boundary."""
+        if not tenant_id:
+            raise HTTPException(status_code=400, detail="tenant_id is required to add staff skill")
+
+        staff = await self.get_staff_by_id(staff_id, tenant_id=tenant_id)
         if not staff:
             raise HTTPException(status_code=404, detail=f"Staff member {staff_id} not found")
 
@@ -515,6 +574,7 @@ class StaffService:
             staff.skills = current_skills
 
         audit = AuditLog(
+            tenant_id=tenant_id,
             entity_type="staff_skill",
             entity_id=staff_id,
             field_changed="skill_added",
@@ -530,13 +590,17 @@ class StaffService:
         logger.info(f"Skill added: {skill_clean} for {staff_id} by {actor_id}")
         return skill
 
-    async def list_staff_skills(self, staff_id: str) -> List[StaffSkill]:
-        """List all certified skills recorded for a staff member."""
+    async def list_staff_skills(self, staff_id: str, tenant_id: Optional[str] = None) -> List[StaffSkill]:
+        """List all certified skills recorded for a staff member within tenant boundary."""
+        if tenant_id:
+            staff = await self.get_staff_by_id(staff_id, tenant_id=tenant_id)
+            if not staff:
+                raise HTTPException(status_code=404, detail=f"Staff member {staff_id} not found")
         result = await self.db.execute(select(StaffSkill).where(StaffSkill.staff_id == staff_id))
         return result.scalars().all()
 
-    async def remove_staff_skill(self, skill_id: str, actor_id: str) -> bool:
-        """Remove a skill certification by ID."""
+    async def remove_staff_skill(self, skill_id: str, actor_id: str, tenant_id: Optional[str] = None) -> bool:
+        """Remove a skill certification by ID within tenant boundary."""
         result = await self.db.execute(
             select(StaffSkill).where(StaffSkill.id == skill_id).with_for_update()
         )
@@ -545,16 +609,20 @@ class StaffService:
             raise HTTPException(status_code=404, detail=f"Staff skill {skill_id} not found")
 
         staff_id = skill.staff_id
+        staff = await self.get_staff_by_id(staff_id, tenant_id=tenant_id)
+        if not staff:
+            raise HTTPException(status_code=404, detail=f"Staff member {staff_id} not found")
+
         skill_name = skill.skill_name
         await self.db.delete(skill)
 
         # Update staff model list
-        staff = await self.get_staff_by_id(staff_id)
-        if staff and staff.skills and skill_name in staff.skills:
+        if staff.skills and skill_name in staff.skills:
             updated_skills = [s for s in staff.skills if s != skill_name]
             staff.skills = updated_skills
 
         audit = AuditLog(
+            tenant_id=tenant_id or getattr(staff, "tenant_id", "HOSP-DEFAULT"),
             entity_type="staff_skill",
             entity_id=staff_id,
             field_changed="skill_removed",

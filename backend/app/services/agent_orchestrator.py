@@ -108,13 +108,13 @@ class TriageAgent:
         }
 
 
-# ─── 2. Bed Management Agent ──────────────────────────────────────────────────
+# ─── 2. Bed Manager Agent ─────────────────────────────────────────────────────
 
-class BedManagementAgent:
+class BedManagerAgent:
     """
-    Autonomous Bed & Resource Inventory Agent.
-    Evaluates real-time bed capacity, ward type matching, and occupancy pressure
-    to propose feasible candidate bed assignments without mutating resource state.
+    Autonomous Bed & Resource Inventory Agent (Bed Manager Agent).
+    Evaluates real-time bed capacity, ward type matching, telemetry/isolation requirements,
+    and step-down transitions to propose feasible candidate bed assignments without mutating resource state.
     """
 
     def __init__(self, db: AsyncSession):
@@ -143,7 +143,7 @@ class BedManagementAgent:
 
         if care_level == "OUTPATIENT":
             return {
-                "agent_id": "bed_management_agent",
+                "agent_id": "bed_manager_agent",
                 "status": "NOT_REQUIRED",
                 "recommended_bed_id": None,
                 "recommended_department_id": "DEP-OPD",
@@ -233,7 +233,7 @@ class BedManagementAgent:
             alt_beds = []
 
         return {
-            "agent_id": "bed_management_agent",
+            "agent_id": "bed_manager_agent",
             "status": "COMPLETED",
             "recommended_bed_id": rec_bed_id,
             "recommended_department_id": rec_dept_id,
@@ -281,7 +281,7 @@ class BedManagementAgent:
             counter_rationale = "Propose emergency holding area placement with STAT clinical consultation and continuous telemetry."
 
         return {
-            "agent_id": "bed_management_agent",
+            "agent_id": "bed_manager_agent",
             "message_type": "COUNTER_PROPOSAL",
             "proposed_bed_id": proposed_bed_id,
             "proposed_department_id": dept_id,
@@ -303,7 +303,7 @@ class BedManagementAgent:
         trans_type = proposal.get("transition_type")
         if trans_type == "OUTPATIENT_DISCHARGE":
             return {
-                "agent_id": "bed_management_agent",
+                "agent_id": "bed_manager_agent",
                 "decision": "ACCEPT",
                 "department_id": "DEP-OPD",
                 "allocated_bed_id": None,
@@ -338,7 +338,7 @@ class BedManagementAgent:
         if target_beds:
             allocated = target_beds[0]
             return {
-                "agent_id": "bed_management_agent",
+                "agent_id": "bed_manager_agent",
                 "decision": "ACCEPT",
                 "allocated_bed_id": allocated.id,
                 "department_id": target_dept,
@@ -379,7 +379,7 @@ class BedManagementAgent:
         if alt_beds:
             counter_bed = alt_beds[0]
             return {
-                "agent_id": "bed_management_agent",
+                "agent_id": "bed_manager_agent",
                 "decision": "COUNTER_PROPOSAL",
                 "counter_bed_id": counter_bed.id,
                 "counter_department_id": counter_bed.department_id,
@@ -392,20 +392,24 @@ class BedManagementAgent:
 
         # 3. No available beds facility-wide
         return {
-            "agent_id": "bed_management_agent",
+            "agent_id": "bed_manager_agent",
             "decision": "REJECT",
             "rationale": f"Target department {target_dept} and all secondary hospital wards have zero available beds.",
             "timestamp": utc_now_iso()
         }
 
 
-# ─── 3. Staff Workload Agent ──────────────────────────────────────────────────
+# Alias for backward compatibility
+BedManagementAgent = BedManagerAgent
 
-class StaffWorkloadAgent:
+
+# ─── 3. Staff Scheduler Agent ─────────────────────────────────────────────────
+
+class StaffSchedulerAgent:
     """
-    Autonomous Staff Workload & Balancing Agent.
-    Monitors clinician rosters, nurse-to-patient load ratios, and doctor availability
-    to propose balanced clinical team assignments without modifying staff records directly.
+    Autonomous Staff Scheduler & Workload Balancing Agent.
+    Monitors clinician rosters, shift schedules, nurse-to-patient load ratios, and doctor availability
+    to propose balanced clinical team assignments and shift coverage without modifying staff records directly.
     """
 
     def __init__(self, db: AsyncSession):
@@ -469,7 +473,7 @@ class StaffWorkloadAgent:
             rationale = "Critical clinical staff shortage: No on-duty doctor or nurse available for assignment."
 
         return {
-            "agent_id": "staff_workload_agent",
+            "agent_id": "staff_scheduler_agent",
             "status": "COMPLETED",
             "assigned_doctor_id": assigned_doc.id if assigned_doc else None,
             "assigned_nurse_id": assigned_nurse.id if assigned_nurse else None,
@@ -506,7 +510,7 @@ class StaffWorkloadAgent:
         rebalanced_nurse = nurses[0] if nurses else None
 
         return {
-            "agent_id": "staff_workload_agent",
+            "agent_id": "staff_scheduler_agent",
             "message_type": "REVISED_PROPOSAL",
             "assigned_doctor_id": rebalanced_doc.id if rebalanced_doc else None,
             "assigned_nurse_id": rebalanced_nurse.id if rebalanced_nurse else None,
@@ -514,6 +518,10 @@ class StaffWorkloadAgent:
             "rationale": f"Rebalanced staff assignment to Doctor {rebalanced_doc.id if rebalanced_doc else 'None'} and Nurse {rebalanced_nurse.id if rebalanced_nurse else 'None'}.",
             "timestamp": utc_now_iso()
         }
+
+
+# Alias for backward compatibility
+StaffWorkloadAgent = StaffSchedulerAgent
 
 
 # ─── 4. Emergency Escalation Agent ────────────────────────────────────────────
@@ -1275,6 +1283,24 @@ class CoordinatorAgent:
             f"({action_type}, Risk: {risk_level}, OptimizationRun: {opt_run.id})"
         )
 
+        # Publish real-time event via Redis Event Bus (PostgreSQL remains authoritative)
+        from app.services.events import event_bus
+        await event_bus.publish({
+            "event_type": "AGENT_DECISION_PROPOSED",
+            "tenant_id": tenant_id,
+            "source": "coordinator_agent",
+            "payload": {
+                "decision_id": decision.id,
+                "encounter_id": encounter.id,
+                "patient_id": patient.id,
+                "action_type": action_type,
+                "risk_level": risk_level,
+                "requires_human_approval": requires_human_approval,
+                "approval_item_id": approval_item_id,
+                "status": decision.status
+            }
+        }, tenant_id=tenant_id)
+
         return {
             "id": decision.id,
             "encounter_id": encounter.id,
@@ -1306,7 +1332,7 @@ class CoordinatorAgent:
 class MultiAgentOrchestratorService:
     """
     Application Service driving the 5-Agent Multi-Agent Hospital Optimization Pipeline.
-    Manages the lifecycle across Triage Agent, Bed Management Agent, Staff Workload Agent,
+    Manages the lifecycle across Triage Agent, Bed Manager Agent, Staff Scheduler Agent,
     Emergency Escalation Agent, Patient Coordinator Agent, and Coordinator Agent
     with strict transactional isolation and idempotency.
     """
@@ -1314,8 +1340,8 @@ class MultiAgentOrchestratorService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.triage_agent = TriageAgent(db)
-        self.bed_agent = BedManagementAgent(db)
-        self.staff_agent = StaffWorkloadAgent(db)
+        self.bed_agent = BedManagerAgent(db)
+        self.staff_agent = StaffSchedulerAgent(db)
         self.emergency_agent = EmergencyEscalationAgent(db)
         self.patient_coordinator_agent = PatientCoordinatorAgent(db)
         self.coordinator = CoordinatorAgent(db)

@@ -98,8 +98,9 @@ class IntakeResponse(Base):
 
 class ClinicalAssessment(Base):
     """
-    Persisted clinical intelligence assessment combining deterministic rule-based severity scoring,
+    Persisted clinical severity and red-flag assessment combining deterministic rule-based severity scoring,
     red-flag detection, evidence synthesis, and doctor-facing structured clinical summary.
+    (Decision support and assessment; automated medical diagnosis is strictly out of scope.)
     """
     __tablename__ = "clinical_assessments"
 

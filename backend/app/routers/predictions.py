@@ -27,6 +27,13 @@ class PredictionRecordRequest(BaseModel):
     target_date: Optional[datetime] = None
 
 
+class PredictionRunRequest(BaseModel):
+    prediction_type: str = Field(..., description="ICU_DEMAND, BED_TURNOVER, ED_SURGE, SURGE_FORECAST")
+    forecast_horizon_hours: int = Field(default=2, ge=1, le=72)
+    department_id: Optional[str] = None
+
+
+
 class PredictionResponse(BaseModel):
     id: str
     model_name: str
@@ -97,6 +104,25 @@ async def record_prediction_run(
     )
 
 
+@router.post("/run", response_model=PredictionResponse)
+async def trigger_prediction_run(
+    req: PredictionRunRequest,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "TECHNICIAN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Execute an automated operational forecast against real-time hospital database state.
+    Calculates demand projections, bed turnover, or ED surge probability and records prediction run.
+    """
+    service = PredictionService(db)
+    return await service.run_prediction(
+        prediction_type=req.prediction_type,
+        forecast_horizon_hours=req.forecast_horizon_hours,
+        department_id=req.department_id,
+        actor_id=current_staff.id
+    )
+
+
 @router.get("/metrics")
 async def get_prediction_metrics(
     current_staff: Staff = Depends(get_current_staff),
@@ -105,4 +131,4 @@ async def get_prediction_metrics(
     """Summary statistics for prediction models (average confidence, inference latency, total runs)."""
     service = PredictionService(db)
     return await service.get_prediction_metrics()
-    return await service.get_prediction_metrics()
+

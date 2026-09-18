@@ -103,7 +103,7 @@ async def create_encounter(
     current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "NURSE", "CHARGE_NURSE", "RECEPTIONIST"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new hospital intake encounter for a patient with RBAC enforcement."""
+    """Create a new hospital intake encounter for a patient with RBAC & tenant enforcement."""
     service = EncounterService(db)
     return await service.create_encounter(
         patient_id=encounter_in.patient_id,
@@ -118,29 +118,34 @@ async def create_encounter(
         pain_level=encounter_in.pain_level,
         respiratory_rate=encounter_in.respiratory_rate,
         gcs_score=encounter_in.gcs_score,
-        actor_id=current_staff.id
+        actor_id=current_staff.id,
+        tenant_id=current_staff.tenant_id
     )
 
 
 @router.get("/encounters/active", response_model=List[EncounterResponse])
 async def list_active_encounters(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    tenant_id: str = Depends(get_current_tenant),
     current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all active hospital encounters."""
+    """List all active hospital encounters scoped to the authenticated tenant."""
     service = EncounterService(db)
-    return await service.list_active_encounters()
+    return await service.list_active_encounters(tenant_id=tenant_id, skip=skip, limit=limit)
 
 
 @router.get("/encounters/{encounter_id}", response_model=EncounterResponse)
 async def get_encounter(
     encounter_id: str,
+    tenant_id: str = Depends(get_current_tenant),
     current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get details of a specific encounter."""
+    """Get details of a specific encounter within tenant boundary."""
     service = EncounterService(db)
-    encounter = await service.get_encounter_by_id(encounter_id)
+    encounter = await service.get_encounter_by_id(encounter_id, tenant_id=tenant_id)
     if not encounter:
         raise HTTPException(status_code=404, detail=f"Encounter {encounter_id} not found")
     return encounter
