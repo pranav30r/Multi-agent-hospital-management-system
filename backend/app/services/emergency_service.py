@@ -280,9 +280,8 @@ class EmergencyService:
             emergency.affected_departments = combined_depts
 
         audit = AuditLog(
-            actor_id=actor_id,
-            action="EMERGENCY_ESCALATED",
-            entity_type="EmergencyEvent",
+            tenant_id=getattr(emergency, "tenant_id", "HOSP-DEFAULT"),
+            entity_type="emergency",
             entity_id=emergency_id,
             field_changed="status",
             old_value=old_status,
