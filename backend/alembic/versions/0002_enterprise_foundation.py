@@ -43,11 +43,9 @@ def upgrade() -> None:
     )
 
     # 3. Add direct tenant_id to root entity tables
-    op.add_column('departments', sa.Column('tenant_id', sa.String(length=50), sa.ForeignKey('tenants.id'), nullable=False, server_default='HOSP-DEFAULT'))
-    op.add_column('staff', sa.Column('tenant_id', sa.String(length=50), sa.ForeignKey('tenants.id'), nullable=False, server_default='HOSP-DEFAULT'))
-    op.add_column('patients', sa.Column('tenant_id', sa.String(length=50), sa.ForeignKey('tenants.id'), nullable=False, server_default='HOSP-DEFAULT'))
-    op.add_column('emergency_events', sa.Column('tenant_id', sa.String(length=50), sa.ForeignKey('tenants.id'), nullable=False, server_default='HOSP-DEFAULT'))
-    op.add_column('audit_log', sa.Column('tenant_id', sa.String(length=50), sa.ForeignKey('tenants.id'), nullable=False, server_default='HOSP-DEFAULT'))
+    for table_name in ['departments', 'staff', 'patients', 'emergency_events', 'audit_log']:
+        with op.batch_alter_table(table_name, schema=None) as batch_op:
+            batch_op.add_column(sa.Column('tenant_id', sa.String(length=50), sa.ForeignKey('tenants.id', name=f"fk_{table_name}_tenant_id"), nullable=False, server_default='HOSP-DEFAULT'))
 
     # 4. Table: clinical_observations (normalized longitudinal vitals & measurements)
     op.create_table(
@@ -107,11 +105,9 @@ def downgrade() -> None:
     op.drop_table('clinical_observations')
 
     # Drop tenant_id columns
-    op.drop_column('audit_log', 'tenant_id')
-    op.drop_column('emergency_events', 'tenant_id')
-    op.drop_column('patients', 'tenant_id')
-    op.drop_column('staff', 'tenant_id')
-    op.drop_column('departments', 'tenant_id')
+    for table_name in ['audit_log', 'emergency_events', 'patients', 'staff', 'departments']:
+        with op.batch_alter_table(table_name, schema=None) as batch_op:
+            batch_op.drop_column('tenant_id')
 
     # Drop tenants table
     op.drop_index('ix_tenants_code', table_name='tenants')

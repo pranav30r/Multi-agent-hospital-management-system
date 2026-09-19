@@ -18,20 +18,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Safely remove existing global uniqueness on code and establish composite (tenant_id, code) uniqueness
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    existing_uqs = [uq["name"] for uq in insp.get_unique_constraints("departments") if uq.get("name")]
+    existing_indexes = [ix["name"] for ix in insp.get_indexes("departments") if ix.get("name")]
+
     with op.batch_alter_table("departments", schema=None) as batch_op:
-        try:
-            batch_op.drop_constraint("departments_code_key", type_="unique")
-        except Exception:
-            pass
-        try:
-            batch_op.drop_constraint("uq_departments_code", type_="unique")
-        except Exception:
-            pass
-        try:
+        for uq_name in ["departments_code_key", "uq_departments_code"]:
+            if uq_name in existing_uqs:
+                batch_op.drop_constraint(uq_name, type_="unique")
+        if "ix_departments_code" in existing_indexes:
             batch_op.drop_index("ix_departments_code")
-        except Exception:
-            pass
-        batch_op.create_unique_constraint("uq_departments_tenant_code", ["tenant_id", "code"])
+        if "uq_departments_tenant_code" not in existing_uqs:
+            batch_op.create_unique_constraint("uq_departments_tenant_code", ["tenant_id", "code"])
 
 
 def downgrade() -> None:

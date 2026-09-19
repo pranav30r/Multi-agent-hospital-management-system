@@ -43,10 +43,28 @@ services:
       - SECRET_KEY=hospital-super-secret-production-key-2026
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hospital_frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
         condition: service_healthy
 
 volumes:
