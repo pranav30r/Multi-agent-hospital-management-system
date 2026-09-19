@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,6 +54,20 @@ async def list_pending_approvals(
     """List pending items in the Human Review Queue requiring staff/clinician approval for the authenticated tenant."""
     service = ApprovalService(db)
     return await service.list_pending_approvals(tenant_id=current_staff.tenant_id, skip=skip, limit=limit)
+
+
+@router.get("/{approval_id}", response_model=ApprovalItemResponse)
+async def get_approval_item(
+    approval_id: str,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve details of a specific approval item within authenticated tenant scope."""
+    service = ApprovalService(db)
+    item = await service.get_approval_by_id(approval_id, tenant_id=current_staff.tenant_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Approval item not found")
+    return item
 
 
 @router.post("/{approval_id}/review", response_model=ApprovalItemResponse)

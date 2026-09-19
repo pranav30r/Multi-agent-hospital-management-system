@@ -78,11 +78,14 @@ async def list_staff(
     role: Optional[str] = Query(None, description="Filter by role: DOCTOR, NURSE, CHARGE_NURSE, TECHNICIAN, RECEPTIONIST, ADMINISTRATOR"),
     department_id: Optional[str] = Query(None, description="Filter by department ID"),
     status: Optional[str] = Query(None, description="Filter by status: AVAILABLE, BUSY, ON_BREAK, OFF_SHIFT"),
+    search: Optional[str] = Query(None, description="Search staff by ID, name, or specialization"),
     current_staff: Staff = Depends(get_current_staff),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all hospital staff with optional filters."""
+    """List all hospital staff with optional filters or keyword search."""
     service = StaffService(db)
+    if search:
+        return await service.search_staff(query_str=search, tenant_id=current_staff.tenant_id)
     return await service.list_staff(role=role, department_id=department_id, status=status, tenant_id=current_staff.tenant_id)
 
 

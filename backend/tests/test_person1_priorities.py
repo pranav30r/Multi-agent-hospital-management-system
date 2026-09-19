@@ -339,3 +339,88 @@ def test_composite_indexes_and_foreign_keys():
 
     discharge_fks = {fk.target_fullname for fk in Discharge.__table__.foreign_keys}
     assert "staff.id" in discharge_fks
+
+
+@pytest.mark.asyncio
+async def test_approvals_get_by_id_and_tenant(client: AsyncClient, make_auth_headers, test_db):
+    """P1: Verify GET /approvals/{id} fetches approval details within tenant boundary and rejects cross-tenant access."""
+    await seed_secondary_tenant(test_db)
+    admin_a = make_auth_headers(staff_id="ADM-001", role="ADMINISTRATOR", tenant_id="HOSP-DEFAULT")
+    admin_b = make_auth_headers(staff_id="ADM-SEC-APPR", role="ADMINISTRATOR", tenant_id="HOSP-SECONDARY")
+
+    # List pending in default tenant to get an approval id if any exists
+    res_list = await client.get("/api/v1/approvals/pending", headers=admin_a)
+    assert res_list.status_code == 200
+    items = res_list.json()
+    if items:
+        target_id = items[0]["id"]
+        # Same tenant can fetch it
+        res_get = await client.get(f"/api/v1/approvals/{target_id}", headers=admin_a)
+        assert res_get.status_code == 200
+        assert res_get.json()["id"] == target_id
+
+        # Cross tenant receives 404
+        cross_res = await client.get(f"/api/v1/approvals/{target_id}", headers=admin_b)
+        assert cross_res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_clinical_task_lifecycle_endpoints(auth_client: AsyncClient, client: AsyncClient, make_auth_headers):
+    """P1: Verify creating and updating clinical workflow tasks via REST endpoints."""
+    headers = make_auth_headers(staff_id="DOC-001", role="DOCTOR")
+
+    # 1. Create Patient & Encounter
+    p_res = await client.post("/api/v1/patients", headers=headers, json={
+        "first_name": "Task", "last_name": "Patient", "age": 35, "gender": "F",
+        "blood_group": "A+", "contact_phone": "+919811111111", "emergency_contact": "+919811111112"
+    })
+    assert p_res.status_code == 201
+    pat_id = p_res.json()["id"]
+
+    e_res = await client.post("/api/v1/patients/encounters", headers=headers, json={
+        "patient_id": pat_id, "current_department_id": "DEP-ER", "chief_complaint": "Acute migraine", "encounter_type": "EMERGENCY"
+    })
+    assert e_res.status_code == 201
+    enc_id = e_res.json()["id"]
+
+    # 2. Create Task
+    task_res = await client.post("/api/v1/workflows/tasks", headers=headers, json={
+        "encounter_id": enc_id, "patient_id": pat_id, "title": "Administer IV Analgesic",
+        "task_type": "TRIAGE", "priority": 1, "description": "10mg Metoclopramide + 500mg Paracetamol"
+    })
+    assert task_res.status_code == 201
+    task_data = task_res.json()
+    task_id = task_data["id"]
+    assert task_data["status"] == "PENDING"
+    assert task_data["title"] == "Administer IV Analgesic"
+
+    # 3. Advance task to IN_PROGRESS
+    up1 = await client.patch(f"/api/v1/workflows/tasks/{task_id}", headers=headers, json={"status": "IN_PROGRESS"})
+    assert up1.status_code == 200
+    assert up1.json()["status"] == "IN_PROGRESS"
+
+    # 4. Complete task
+    up2 = await client.patch(f"/api/v1/workflows/tasks/{task_id}", headers=headers, json={"status": "COMPLETED"})
+    assert up2.status_code == 200
+    assert up2.json()["status"] == "COMPLETED"
+    assert up2.json()["completed_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_staff_search_endpoint_and_tenant_isolation(client: AsyncClient, make_auth_headers, test_db):
+    """P1: Verify GET /staff?search= query operates within tenant boundaries."""
+    await seed_secondary_tenant(test_db)
+    admin_a = make_auth_headers(staff_id="ADM-001", role="ADMINISTRATOR", tenant_id="HOSP-DEFAULT")
+    admin_b = make_auth_headers(staff_id="ADM-TENANT-SEC", role="ADMINISTRATOR", tenant_id="HOSP-SECONDARY")
+
+    # Search for Kavita in HOSP-SECONDARY (should be found)
+    search_b = await client.get("/api/v1/staff?search=Kavita", headers=admin_b)
+    assert search_b.status_code == 200
+    b_ids = [s["id"] for s in search_b.json()]
+    assert "DOC-TENANT-SEC" in b_ids
+
+    # Search for Kavita in HOSP-DEFAULT (should NOT be found due to tenant isolation)
+    search_a = await client.get("/api/v1/staff?search=Kavita", headers=admin_a)
+    assert search_a.status_code == 200
+    a_ids = [s["id"] for s in search_a.json()]
+    assert "DOC-TENANT-SEC" not in a_ids

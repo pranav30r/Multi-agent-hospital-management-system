@@ -142,8 +142,8 @@ class StaffService:
         result = await self.db.execute(query.order_by(Staff.role, Staff.id))
         return result.scalars().all()
 
-    async def search_staff(self, query_str: str, limit: int = 20) -> List[Staff]:
-        """Search staff by ID, first name, last name, or specialization."""
+    async def search_staff(self, query_str: str, limit: int = 20, tenant_id: Optional[str] = None) -> List[Staff]:
+        """Search staff by ID, first name, last name, or specialization with optional tenant isolation."""
         term = f"%{query_str.strip().lower()}%"
         stmt = select(Staff).where(
             or_(
@@ -152,7 +152,10 @@ class StaffService:
                 func.lower(Staff.last_name).like(term),
                 func.lower(Staff.specialization).like(term)
             )
-        ).limit(limit)
+        )
+        if tenant_id:
+            stmt = stmt.where(Staff.tenant_id == tenant_id)
+        stmt = stmt.limit(limit)
         result = await self.db.execute(stmt)
         return result.scalars().all()
 

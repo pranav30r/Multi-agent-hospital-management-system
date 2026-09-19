@@ -183,13 +183,14 @@ class ApprovalService:
 
         return item
 
-    async def approve_action(self, approval_id: str, actor_id: str, actor_role: str) -> ApprovalItem:
+    async def approve_action(self, approval_id: str, actor_id: str, actor_role: str, tenant_id: Optional[str] = None) -> ApprovalItem:
         """Convenience method to approve a proposed action."""
         return await self.review_approval(
             approval_id=approval_id,
             action="APPROVE",
             actor_id=actor_id,
-            actor_role=actor_role
+            actor_role=actor_role,
+            tenant_id=tenant_id
         )
 
     async def modify_action(
@@ -197,7 +198,8 @@ class ApprovalService:
         approval_id: str,
         modification: Dict[str, Any],
         actor_id: str,
-        actor_role: str
+        actor_role: str,
+        tenant_id: Optional[str] = None
     ) -> ApprovalItem:
         """Convenience method to modify a proposed action before approval."""
         return await self.review_approval(
@@ -205,7 +207,8 @@ class ApprovalService:
             action="MODIFY",
             actor_id=actor_id,
             actor_role=actor_role,
-            modification=modification
+            modification=modification,
+            tenant_id=tenant_id
         )
 
     async def reject_action(
@@ -213,7 +216,8 @@ class ApprovalService:
         approval_id: str,
         rejection_reason: str,
         actor_id: str,
-        actor_role: str
+        actor_role: str,
+        tenant_id: Optional[str] = None
     ) -> ApprovalItem:
         """Convenience method to reject a proposed action."""
         return await self.review_approval(
@@ -221,7 +225,8 @@ class ApprovalService:
             action="REJECT",
             actor_id=actor_id,
             actor_role=actor_role,
-            rejection_reason=rejection_reason
+            rejection_reason=rejection_reason,
+            tenant_id=tenant_id
         )
 
     async def expire_approval(self, approval_id: str, actor_id: Optional[str] = "SYSTEM") -> ApprovalItem:

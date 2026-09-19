@@ -63,12 +63,34 @@ class QueueResponse(BaseModel):
 class TaskResponse(BaseModel):
     id: str
     encounter_id: str
+    patient_id: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
     task_type: str
+    assigned_to_role: Optional[str] = None
+    assigned_to_staff_id: Optional[str] = None
     priority: int
     status: str
     created_at: datetime
+    completed_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TaskCreate(BaseModel):
+    encounter_id: str
+    patient_id: str
+    title: str
+    task_type: str = Field(default="TRIAGE", examples=["TRIAGE"])
+    priority: int = Field(default=3, ge=1, le=5)
+    assigned_to_role: Optional[str] = None
+    assigned_to_staff_id: Optional[str] = None
+    description: Optional[str] = None
+
+
+class TaskUpdate(BaseModel):
+    status: str = Field(..., examples=["IN_PROGRESS"])
+    assigned_to_staff_id: Optional[str] = None
 
 
 # ─── Workflow Definition Endpoints ──────────────────────────────────────────
@@ -181,4 +203,41 @@ async def list_clinical_tasks(
         status=status,
         skip=skip,
         limit=limit
+    )
+
+
+@router.post("/tasks", response_model=TaskResponse, status_code=201)
+async def create_clinical_task(
+    req: TaskCreate,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "NURSE", "CHARGE_NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new clinical workflow task for an encounter."""
+    service = WorkflowService(db)
+    return await service.create_task(
+        encounter_id=req.encounter_id,
+        patient_id=req.patient_id,
+        title=req.title,
+        task_type=req.task_type,
+        priority=req.priority,
+        assigned_to_role=req.assigned_to_role,
+        assigned_to_staff_id=req.assigned_to_staff_id,
+        description=req.description,
+        created_by_agent=None
+    )
+
+
+@router.patch("/tasks/{task_id}", response_model=TaskResponse)
+async def update_clinical_task(
+    task_id: str,
+    req: TaskUpdate,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "NURSE", "CHARGE_NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update clinical workflow task status (PENDING -> IN_PROGRESS -> COMPLETED)."""
+    service = WorkflowService(db)
+    return await service.update_task_status(
+        task_id=task_id,
+        status=req.status,
+        assigned_to_staff_id=req.assigned_to_staff_id
     )
