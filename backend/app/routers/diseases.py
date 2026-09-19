@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/diseases", tags=["Disease Registry"])
 
 class DiseaseCreate(BaseModel):
-    name: str = Field(..., example="Acute Viral Myocarditis")
-    icd_code: Optional[str] = Field(None, example="I40.9")
-    category: str = Field(default="Cardiovascular", example="Cardiovascular")
+    name: str = Field(..., examples=["Acute Viral Myocarditis"])
+    icd_code: Optional[str] = Field(None, examples=["I40.9"])
+    category: str = Field(default="Cardiovascular", examples=["Cardiovascular"])
     is_communicable: bool = Field(default=False)
     requires_isolation: bool = Field(default=False)
 
@@ -28,8 +28,7 @@ class DiseaseResponse(BaseModel):
     requires_isolation: bool
     added_by: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 @router.get("", response_model=List[DiseaseResponse])
 async def list_diseases(

@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -27,20 +27,19 @@ class EquipmentResponse(BaseModel):
     current_encounter_id: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EquipmentStatusUpdate(BaseModel):
-    status: str = Field(..., example="MAINTENANCE")
-    reason: Optional[str] = Field(None, example="Scheduled calibration")
+    status: str = Field(..., examples=["MAINTENANCE"])
+    reason: Optional[str] = Field(None, examples=["Scheduled calibration"])
 
 
 class EquipmentBookingCreate(BaseModel):
-    equipment_id: str = Field(..., example="RES-CT-01")
-    encounter_id: str = Field(..., example="ENC-0001")
-    patient_id: str = Field(..., example="PAT-0001")
-    notes: Optional[str] = Field(None, example="CT Chest with contrast for suspected PE")
+    equipment_id: str = Field(..., examples=["RES-CT-01"])
+    encounter_id: str = Field(..., examples=["ENC-0001"])
+    patient_id: str = Field(..., examples=["PAT-0001"])
+    notes: Optional[str] = Field(None, examples=["CT Chest with contrast for suspected PE"])
 
 
 class EquipmentBookingResponse(BaseModel):
@@ -54,8 +53,7 @@ class EquipmentBookingResponse(BaseModel):
     status: str
     notes: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── Equipment CRUD ─────────────────────────────────────────────────────────

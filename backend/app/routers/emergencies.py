@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -17,9 +17,9 @@ router = APIRouter(prefix="/emergencies", tags=["Emergency Operations"])
 # ─── Schemas ────────────────────────────────────────────────────────────────
 
 class DeclareEmergencyRequest(BaseModel):
-    event_type: str = Field(..., example="MASS_CASUALTY")  # MASS_CASUALTY, PANDEMIC_SURGE, INFRASTRUCTURE_FAILURE, STAFF_CRISIS
-    severity: str = Field(default="HIGH", example="CRITICAL")
-    description: str = Field(..., example="Major highway multivehicle collision; expecting 8 critical trauma arrivals")
+    event_type: str = Field(..., examples=["MASS_CASUALTY"])  # MASS_CASUALTY, PANDEMIC_SURGE, INFRASTRUCTURE_FAILURE, STAFF_CRISIS
+    severity: str = Field(default="HIGH", examples=["CRITICAL"])
+    description: str = Field(..., examples=["Major highway multivehicle collision; expecting 8 critical trauma arrivals"])
     affected_departments: List[str] = Field(default_factory=list, description="List of affected department IDs")
     expected_patient_surge: int = Field(default=8, ge=1, le=50)
 
@@ -36,8 +36,7 @@ class EmergencyResponse(BaseModel):
     declared_at: datetime
     resolved_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CrewRunResponse(BaseModel):
@@ -51,8 +50,7 @@ class CrewRunResponse(BaseModel):
     status: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -16,9 +16,9 @@ router = APIRouter(tags=["Beds & Departments"])
 # ─── Request & Response Schemas ─────────────────────────────────────────────
 
 class ManualBedBookRequest(BaseModel):
-    patient_id: str = Field(..., example="PAT-0001")
-    encounter_id: str = Field(..., example="ENC-0001")
-    bed_id: str = Field(..., example="BED-ICU-07")
+    patient_id: str = Field(..., examples=["PAT-0001"])
+    encounter_id: str = Field(..., examples=["ENC-0001"])
+    bed_id: str = Field(..., examples=["BED-ICU-07"])
     reason: str = Field(default="Direct clinician assignment due to urgent ICU need")
 
 
@@ -33,8 +33,7 @@ class BedResponse(BaseModel):
     current_patient_id: Optional[str]
     current_encounter_id: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DepartmentResponse(BaseModel):
@@ -47,8 +46,7 @@ class DepartmentResponse(BaseModel):
     min_nurses: int
     nurse_patient_ratio: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────

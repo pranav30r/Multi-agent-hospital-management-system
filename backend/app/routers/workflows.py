@@ -27,9 +27,9 @@ class WorkflowDefinitionResponse(BaseModel):
 
 
 class WorkflowInstanceCreate(BaseModel):
-    workflow_definition_id: str = Field(..., example="WFD-EMERGENCY-ADMISSION")
-    encounter_id: str = Field(..., example="ENC-0001")
-    patient_id: str = Field(..., example="PAT-0001")
+    workflow_definition_id: str = Field(..., examples=["WFD-EMERGENCY-ADMISSION"])
+    encounter_id: str = Field(..., examples=["ENC-0001"])
+    patient_id: str = Field(..., examples=["PAT-0001"])
 
 
 class WorkflowInstanceResponse(BaseModel):
@@ -47,7 +47,7 @@ class WorkflowInstanceResponse(BaseModel):
 
 
 class StepAdvanceRequest(BaseModel):
-    notes: Optional[str] = Field(None, example="ESI triage completed, vital signs stable")
+    notes: Optional[str] = Field(None, examples=["ESI triage completed, vital signs stable"])
 
 
 class QueueResponse(BaseModel):

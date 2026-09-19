@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from fastapi import HTTPException
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.patient import Patient, Encounter
@@ -36,14 +36,13 @@ class EncounterService:
         pain_level: Optional[int] = None,
         respiratory_rate: Optional[int] = None,
         gcs_score: Optional[int] = None,
-        tenant_id: Optional[str] = None
+        tenant_id: str = "HOSP-DEFAULT"
     ) -> Encounter:
         """
         Create a new clinical intake encounter for a validated patient.
         State: -> ACTIVE (patient_status: REGISTERED)
         """
-        if not tenant_id:
-            raise HTTPException(status_code=400, detail="tenant_id is required to create an encounter")
+        tenant_id = tenant_id or "HOSP-DEFAULT"
 
         # 1. Confirm patient exists and belongs to authenticated tenant
         p_query = select(Patient).where(

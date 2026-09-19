@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -29,13 +29,12 @@ class StaffResponse(BaseModel):
     skills: Optional[List[str]] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StaffStatusUpdate(BaseModel):
-    status: str = Field(..., example="BUSY")
-    reason: Optional[str] = Field(None, example="Assigned to emergency resuscitation")
+    status: str = Field(..., examples=["BUSY"])
+    reason: Optional[str] = Field(None, examples=["Assigned to emergency resuscitation"])
 
 
 class StaffShiftResponse(BaseModel):
@@ -47,14 +46,13 @@ class StaffShiftResponse(BaseModel):
     end_time: str
     status: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StaffShiftCreate(BaseModel):
     staff_id: str
     department_id: str
-    shift_type: str = Field(..., example="MORNING")
+    shift_type: str = Field(..., examples=["MORNING"])
     start_time: str = Field(default="06:00")
     end_time: str = Field(default="14:00")
 
@@ -65,13 +63,12 @@ class StaffSkillResponse(BaseModel):
     skill_name: str
     certification_date: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StaffSkillCreate(BaseModel):
     staff_id: str
-    skill_name: str = Field(..., example="ICU_CERTIFIED")
+    skill_name: str = Field(..., examples=["ICU_CERTIFIED"])
 
 
 # ─── Staff CRUD ─────────────────────────────────────────────────────────────
