@@ -34,8 +34,8 @@ class ClinicalSummaryService:
             "symptoms": intk.get("symptoms") or [],
             "duration": intk.get("duration") or "Unspecified duration",
             "pain": intk.get("pain") or {
-                "present": encounter_data.get("vitals", {}).get("pain_level", 0) > 0,
-                "score": encounter_data.get("vitals", {}).get("pain_level"),
+                "present": ((encounter_data.get("vitals") or {}).get("pain_level") or 0) > 0,
+                "score": (encounter_data.get("vitals") or {}).get("pain_level"),
                 "location": "Unspecified"
             },
             "medications": intk.get("medications") or "None reported",
