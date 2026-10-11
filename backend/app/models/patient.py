@@ -8,6 +8,10 @@ from app.utils.datetime_utils import utc_now
 
 class Patient(Base):
     __tablename__ = "patients"
+    __table_args__ = (
+        Index("ix_patients_tenant_phone", "tenant_id", "contact_phone"),
+        Index("ix_patients_tenant_created", "tenant_id", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"PAT-{uuid.uuid4().hex[:6].upper()}")
     tenant_id: Mapped[str] = mapped_column(String(50), ForeignKey("tenants.id"), nullable=False, default="HOSP-DEFAULT", server_default="HOSP-DEFAULT", index=True)
@@ -31,6 +35,7 @@ class Encounter(Base):
     __tablename__ = "encounters"
     __table_args__ = (
         Index("ix_encounters_status_arrival", "status", "arrival_time"),
+        Index("ix_encounters_patient_arrival", "patient_id", "arrival_time"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"ENC-{uuid.uuid4().hex[:6].upper()}")

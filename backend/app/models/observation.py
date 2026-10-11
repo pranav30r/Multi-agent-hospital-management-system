@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 from typing import Optional
-from sqlalchemy import String, Float, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import String, Float, DateTime, ForeignKey, JSON, Text, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from app.utils.datetime_utils import utc_now
@@ -14,6 +14,10 @@ class ClinicalObservation(Base):
     correction audit trails and multi-tenant scoping.
     """
     __tablename__ = "clinical_observations"
+    __table_args__ = (
+        Index("idx_obs_tenant_patient_observed", "tenant_id", "patient_id", "observed_at"),
+        Index("idx_obs_tenant_patient_type_observed", "tenant_id", "patient_id", "observation_type", "observed_at"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(50), 
