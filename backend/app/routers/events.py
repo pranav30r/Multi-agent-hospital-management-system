@@ -185,6 +185,7 @@ class TenantWebSocketManager:
 
 # Singleton connection manager
 ws_manager = TenantWebSocketManager()
+event_bus.register_local_subscriber(ws_manager._broadcast_to_tenant_local)
 
 
 @router.websocket("/ws/events")

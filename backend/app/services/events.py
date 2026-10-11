@@ -43,6 +43,11 @@ class RedisEventBus:
 
     def __init__(self, manager=None):
         self.manager = manager or redis_manager
+        self._local_subscriber = None
+
+    def register_local_subscriber(self, callback):
+        """Registers a fallback in-process callback (e.g. WebSocket manager) when Redis is unavailable."""
+        self._local_subscriber = callback
 
     async def publish(
         self,
@@ -51,7 +56,8 @@ class RedisEventBus:
     ) -> bool:
         """
         Publishes a structured event to the appropriate tenant Redis channel.
-        Returns True if successfully sent to Redis, False if degraded/unavailable.
+        Falls back to local in-process subscriber if Redis is unavailable.
+        Returns True if sent to Redis, False if degraded/unavailable.
         Does NOT raise exceptions, preserving transactional integrity of the caller.
         """
         try:
@@ -80,7 +86,12 @@ class RedisEventBus:
             # 2. Obtain Redis Client
             client = await self.manager.get_client()
             if not client:
-                logger.debug(f"Redis client not available. Dropping real-time event {event_obj.event_type} on {channel}")
+                logger.debug(f"Redis client not available. Falling back to local dispatch for {event_obj.event_type} on {channel}")
+                if self._local_subscriber:
+                    try:
+                        await self._local_subscriber(event_obj.tenant_id, event_obj.model_dump())
+                    except Exception as loc_err:
+                        logger.warning(f"Local event dispatch failed: {loc_err}")
                 return False
 
             # 3. Publish payload as JSON
@@ -94,6 +105,11 @@ class RedisEventBus:
 
         except Exception as exc:
             logger.warning(f"Failed to publish event to Redis Pub/Sub ({exc}). Continuing gracefully.")
+            if self._local_subscriber and 'event_obj' in locals():
+                try:
+                    await self._local_subscriber(event_obj.tenant_id, event_obj.model_dump())
+                except Exception as loc_err:
+                    logger.warning(f"Local event dispatch failed: {loc_err}")
             return False
 
     async def get_pubsub_for_tenant(self, tenant_id: str):

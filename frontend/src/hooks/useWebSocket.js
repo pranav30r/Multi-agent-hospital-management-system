@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { getToken } from '../api/client.js';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/events';
+const WS_URL = import.meta.env.VITE_WS_URL || (
+  typeof window !== 'undefined' && window.location && window.location.port !== '5173'
+    ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/events`
+    : 'ws://localhost:8000/ws/events'
+);
 
 export function useWebSocket() {
   const [lastEvent, setLastEvent] = useState(null);
