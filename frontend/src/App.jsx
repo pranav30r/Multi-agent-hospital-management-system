@@ -8,6 +8,7 @@ import EmergencyQueue from "./components/EmergencyQueue.jsx";
 import BedGrid from "./components/BedGrid.jsx";
 import PatientIntakeForm from "./components/PatientIntakeForm.jsx";
 import ApprovalsPanel from "./components/ApprovalsPanel.jsx";
+import Footer from "./components/Footer.jsx";
 
 function Dashboard() {
   return (
@@ -19,6 +20,7 @@ function Dashboard() {
       <BedGrid />
       <PatientIntakeForm />
       <ApprovalsPanel />
+      <Footer />
     </EventProvider>
   );
 }

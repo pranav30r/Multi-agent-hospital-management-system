@@ -68,7 +68,7 @@ function EmergencyQueue() {
   };
 
   const formatTime = (isoStr) => {
-    if (!isoStr) return '—';
+    if (!isoStr) return '-';
     const d = new Date(isoStr);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };

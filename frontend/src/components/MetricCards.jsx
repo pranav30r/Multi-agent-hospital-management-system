@@ -40,7 +40,7 @@ function MetricCards() {
         {[1, 2, 3, 4].map((i) => (
           <div key={i} className="metric-card">
             <h3>Loading...</h3>
-            <p className="loading">—</p>
+            <p className="loading">...</p>
           </div>
         ))}
       </section>

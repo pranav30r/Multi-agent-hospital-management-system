@@ -47,9 +47,9 @@ function EmergencyBanner() {
     <div className="emergency-banner">
       {emergencies.map(em => (
         <div key={em.id} className="emergency-item">
-          <span className="emergency-icon">⚠</span>
+          <span className="emergency-badge">[ALERT]</span>
           <span className="emergency-info">
-            <strong>{em.event_type.replace(/_/g, ' ')}</strong> — {em.severity} — {em.description}
+            <strong>{em.event_type.replace(/_/g, ' ')}</strong> - {em.severity} - {em.description}
           </span>
           {canResolve && (
             <button

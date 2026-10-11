@@ -49,11 +49,11 @@ function Header() {
         )}
 
         <span className={`status ${statusClass}`}>
-          ● {statusText}
+          {statusText}
         </span>
 
         {isConnected && (
-          <span className="ws-indicator" title="WebSocket connected">⚡ Live</span>
+          <span className="ws-indicator" title="WebSocket connected">LIVE</span>
         )}
 
         <span className="time">

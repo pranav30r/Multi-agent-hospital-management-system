@@ -197,7 +197,7 @@ function PatientIntakeForm() {
               </>
             ) : (
               <>
-                <h2>Step 2: Clinical Encounter — {createdPatientId}</h2>
+                <h2>Step 2: Clinical Encounter - {createdPatientId}</h2>
 
                 {error && <p className="error-message">{error}</p>}
                 {success && <p className="success-message">{success}</p>}
@@ -235,12 +235,12 @@ function PatientIntakeForm() {
                       onChange={handleEncounterChange} placeholder="80" min="20" max="200" />
                   </label>
                   <label>
-                    SpO₂ (%)
+                    SpO2 (%)
                     <input type="number" name="spo2" value={encounterData.spo2}
                       onChange={handleEncounterChange} placeholder="98" min="50" max="100" />
                   </label>
                   <label>
-                    Temperature (°F)
+                    Temperature (F)
                     <input type="number" step="0.1" name="temperature_f" value={encounterData.temperature_f}
                       onChange={handleEncounterChange} placeholder="98.6" min="85" max="110" />
                   </label>

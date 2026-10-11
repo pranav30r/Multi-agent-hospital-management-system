@@ -1,16 +1,35 @@
-# React + Vite
+# Multi-Agent Hospital Management System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Production-grade multi-agent AI system for hospital resource optimization, clinical workflow automation, and patient care coordination.
 
-Currently, two official plugins are available:
+## Architecture
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Backend:** Python 3.11+ / FastAPI / SQLAlchemy 2.0 (async)
+- **Database:** PostgreSQL 15+ (SQLite fallback for dev)
+- **Cache/Pub-Sub:** Redis 7.0+
+- **AI Agents:** LangGraph + CrewAI (Person 2)
+- **Frontend:** React Command Center (Person 3)
+- **Infra:** Docker Compose
 
-## React Compiler
+## Team Branches
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Branch | Owner | Scope |
+|--------|-------|-------|
+| `feature/backend-core` | Person 1 | DB Models, REST API, WebSocket, Seed Data |
+| `feature/ai-agents` | Person 2 | Event Bus, 6 AI Agents, Prediction Engine |
+| `feature/frontend-ui` | Person 3 | React Command Center Dashboard |
 
-## Expanding the ESLint configuration
+## Quick Start (Backend)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+## Backend Stats
+
+- **28** SQLAlchemy models
+- **44** REST API routes across 9 routers
+- **40** ICD-10 coded diseases in registry
+- **WebSocket** real-time event streaming at `/ws/events`
