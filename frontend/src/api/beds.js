@@ -1,4 +1,4 @@
-import { apiGet } from './client.js';
+import { apiGet, apiPost } from './client.js';
 
 export async function listBeds(departmentId, status) {
   const params = new URLSearchParams();
@@ -10,4 +10,12 @@ export async function listBeds(departmentId, status) {
 
 export async function listDepartments() {
   return apiGet('/departments');
+}
+
+export async function bookBedManual(data) {
+  return apiPost('/beds/book-manual', data);
+}
+
+export async function confirmPatientInBed(bedId) {
+  return apiPost(`/beds/${bedId}/confirm-patient-in-bed`);
 }
