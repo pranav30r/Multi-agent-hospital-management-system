@@ -6,6 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import ApprovalItem, AgentDecision, AuditLog
+from app.models.bed import Bed, BedAssignment
+from app.models.department import Department
+from app.models.patient import Patient, Encounter
 from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
@@ -163,11 +166,38 @@ class ApprovalService:
         )
         self.db.add(audit)
 
+        # Consequential Resource Execution for APPROVED / MODIFIED actions
+        executed_bed_id = None
+        if action_clean in ["APPROVE", "MODIFY"]:
+            executed_bed_id = await self._execute_approved_action(
+                item=item,
+                decision=decision,
+                action=action_clean,
+                modification=modification,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                tenant_id=effective_tenant
+            )
+
         await self.db.commit()
         await self.db.refresh(item)
         logger.info(f"APPROVAL RESOLVED: Item {approval_id} -> {action_clean} by authenticated staff {actor_id}")
 
         from app.services.events import event_bus
+        if executed_bed_id:
+            await event_bus.publish({
+                "event_type": "BED_RESERVED",
+                "tenant_id": effective_tenant,
+                "source": "approval_execution_pipeline",
+                "payload": {
+                    "bed_id": executed_bed_id,
+                    "patient_id": item.proposed_action.get("patient_id") if isinstance(item.proposed_action, dict) else None,
+                    "encounter_id": item.proposed_action.get("encounter_id") if isinstance(item.proposed_action, dict) else None,
+                    "status": "RESERVED",
+                    "approved_by": actor_id
+                }
+            }, tenant_id=effective_tenant)
+
         await event_bus.publish({
             "event_type": "APPROVAL_DECIDED",
             "tenant_id": effective_tenant,
@@ -182,6 +212,138 @@ class ApprovalService:
         }, tenant_id=effective_tenant)
 
         return item
+
+    async def _execute_approved_action(
+        self,
+        item: ApprovalItem,
+        decision: Optional[AgentDecision],
+        action: str,
+        modification: Optional[Dict[str, Any]],
+        actor_id: str,
+        actor_role: str,
+        tenant_id: str
+    ) -> Optional[str]:
+        """
+        Executes consequential resource allocation for an approved AI proposal.
+        Revalidates tenant boundaries, encounter ownership, bed live status, and compatibility.
+        Maintains transactional atomicity: if resource execution fails, raises HTTPException
+        before transaction commit so that the approval remains unexecuted.
+        """
+        base_payload = item.proposed_action or {}
+        if not isinstance(base_payload, dict):
+            return None
+
+        effective_payload = dict(base_payload)
+        if action == "MODIFY" and modification and isinstance(modification, dict):
+            effective_payload.update(modification)
+
+        target_bed_id = effective_payload.get("target_bed_id") or effective_payload.get("bed_id")
+        enc_id = effective_payload.get("encounter_id") or (getattr(decision, "encounter_id", None) if decision else None)
+
+        # If no bed or encounter specified, no physical bed allocation to perform
+        if not target_bed_id or not enc_id:
+            return None
+
+        # 1. Revalidate Encounter and tenant ownership
+        enc_query = (
+            select(Encounter)
+            .join(Patient, Encounter.patient_id == Patient.id)
+            .where(Encounter.id == enc_id)
+        )
+        if tenant_id:
+            enc_query = enc_query.where(Patient.tenant_id == tenant_id)
+
+        res_enc = await self.db.execute(enc_query)
+        encounter = res_enc.scalars().first()
+        if not encounter:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Encounter {enc_id} not found or does not belong to tenant '{tenant_id}'"
+            )
+
+        pat_id = effective_payload.get("patient_id") or encounter.patient_id
+        if encounter.patient_id != pat_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Encounter patient mismatch: expected '{encounter.patient_id}', got '{pat_id}'"
+            )
+
+        # 2. Revalidate Target Bed existence, tenant ownership, and live status with pessimistic lock
+        bed_query = (
+            select(Bed)
+            .join(Department, Bed.department_id == Department.id)
+            .where(Bed.id == target_bed_id)
+        )
+        if tenant_id:
+            bed_query = bed_query.where(Department.tenant_id == tenant_id)
+
+        res_bed = await self.db.execute(bed_query.with_for_update())
+        bed = res_bed.scalars().first()
+        if not bed:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Bed {target_bed_id} not found in tenant '{tenant_id}'"
+            )
+
+        if bed.status != "AVAILABLE":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bed {target_bed_id} is in '{bed.status}' state and is not available for reservation"
+            )
+
+        # 3. Check bed compatibility if specified (e.g. ICU requirement)
+        required_bed_type = effective_payload.get("bed_type")
+        if required_bed_type and str(required_bed_type).upper() == "ICU" and bed.bed_type not in ["ICU", "CARDIAC_MONITOR"]:
+            if action != "MODIFY":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Bed {target_bed_id} type '{bed.bed_type}' is incompatible with required ICU level of care"
+                )
+
+        # 4. Apply State Mutation on Bed
+        old_bed_status = bed.status
+        bed.status = "RESERVED"
+        bed.current_patient_id = pat_id
+        bed.current_encounter_id = enc_id
+
+        # 5. Synchronize Encounter
+        encounter.current_bed_id = target_bed_id
+        encounter.bed_reserved_time = utc_now()
+        encounter.patient_status = "BED_RESERVED"
+        if effective_payload.get("assigned_doctor_id"):
+            encounter.assigned_doctor_id = effective_payload["assigned_doctor_id"]
+        if effective_payload.get("assigned_nurse_id"):
+            encounter.assigned_nurse_id = effective_payload["assigned_nurse_id"]
+
+        # 6. Record BedAssignment
+        assignment = BedAssignment(
+            bed_id=target_bed_id,
+            encounter_id=enc_id,
+            patient_id=pat_id,
+            assigned_by=actor_id,
+            is_manual_override=(action == "MODIFY"),
+            status="RESERVED"
+        )
+        self.db.add(assignment)
+
+        # 7. Record Bed AuditLog entry
+        bed_audit = AuditLog(
+            tenant_id=tenant_id,
+            entity_type="bed",
+            entity_id=target_bed_id,
+            field_changed="status",
+            old_value=old_bed_status,
+            new_value="RESERVED",
+            changed_by=actor_id,
+            change_reason=f"Approved AI Recommendation ({item.action_type}) by {actor_role} ({action})"
+        )
+        self.db.add(bed_audit)
+
+        logger.info(
+            f"EXECUTED APPROVED RESOURCE MUTATION: Bed {target_bed_id} RESERVED for Encounter {enc_id} "
+            f"via Approval {item.id} ({action}) by {actor_id}"
+        )
+        return target_bed_id
 
     async def approve_action(self, approval_id: str, actor_id: str, actor_role: str, tenant_id: Optional[str] = None) -> ApprovalItem:
         """Convenience method to approve a proposed action."""
