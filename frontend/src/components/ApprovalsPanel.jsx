@@ -43,6 +43,7 @@ function ApprovalsPanel() {
       const body = { action };
       if (action === 'REJECT' && reason) body.rejection_reason = reason;
       await reviewApproval(approvalId, body);
+      window.dispatchEvent(new CustomEvent('approvals:updated'));
       setRejectingId(null);
       setRejectReason('');
       await fetchApprovals();

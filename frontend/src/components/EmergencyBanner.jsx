@@ -33,6 +33,7 @@ function EmergencyBanner() {
     setResolving(id);
     try {
       await resolveEmergency(id);
+      window.dispatchEvent(new CustomEvent('emergency:updated'));
       await fetchEmergencies();
     } catch {
       // User notification or error handling

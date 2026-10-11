@@ -28,13 +28,19 @@ function EmergencyQueue() {
     return () => clearInterval(interval);
   }, [fetchEncounters]);
 
-  // Refresh on encounter-related WebSocket events
+  // Refresh on encounter-related WebSocket events or local intake submissions
   useEffect(() => {
     if (lastEvent && lastEvent.event_type &&
         (lastEvent.event_type.includes('ENCOUNTER') || lastEvent.event_type.includes('TRIAGE') || lastEvent.event_type.includes('PATIENT'))) {
       fetchEncounters();
     }
   }, [lastEvent, fetchEncounters]);
+
+  useEffect(() => {
+    const handler = () => fetchEncounters();
+    window.addEventListener('encounter:created', handler);
+    return () => window.removeEventListener('encounter:created', handler);
+  }, [fetchEncounters]);
 
   if (loading) {
     return (

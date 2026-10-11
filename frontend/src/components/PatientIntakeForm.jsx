@@ -113,6 +113,7 @@ function PatientIntakeForm() {
       Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 
       await createEncounter(payload);
+      window.dispatchEvent(new CustomEvent('encounter:created'));
       setSuccess(`Patient ${createdPatientId} registered and encounter created successfully.`);
       setTimeout(() => {
         resetForm();

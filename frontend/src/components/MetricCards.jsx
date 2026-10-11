@@ -34,6 +34,18 @@ function MetricCards() {
     }
   }, [lastEvent, fetchState]);
 
+  useEffect(() => {
+    const handler = () => fetchState();
+    window.addEventListener('encounter:created', handler);
+    window.addEventListener('emergency:updated', handler);
+    window.addEventListener('approvals:updated', handler);
+    return () => {
+      window.removeEventListener('encounter:created', handler);
+      window.removeEventListener('emergency:updated', handler);
+      window.removeEventListener('approvals:updated', handler);
+    };
+  }, [fetchState]);
+
   if (loading) {
     return (
       <section className="metrics">
