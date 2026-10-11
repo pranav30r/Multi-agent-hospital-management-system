@@ -1,35 +1,16 @@
-# Multi-Agent Hospital Management System
+# React + Vite
 
-Production-grade multi-agent AI system for hospital resource optimization, clinical workflow automation, and patient care coordination.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Architecture
+Currently, two official plugins are available:
 
-- **Backend:** Python 3.11+ / FastAPI / SQLAlchemy 2.0 (async)
-- **Database:** PostgreSQL 15+ (SQLite fallback for dev)
-- **Cache/Pub-Sub:** Redis 7.0+
-- **AI Agents:** LangGraph + CrewAI (Person 2)
-- **Frontend:** React Command Center (Person 3)
-- **Infra:** Docker Compose
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-## Team Branches
+## React Compiler
 
-| Branch | Owner | Scope |
-|--------|-------|-------|
-| `feature/backend-core` | Person 1 | DB Models, REST API, WebSocket, Seed Data |
-| `feature/ai-agents` | Person 2 | Event Bus, 6 AI Agents, Prediction Engine |
-| `feature/frontend-ui` | Person 3 | React Command Center Dashboard |
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-## Quick Start (Backend)
+## Expanding the ESLint configuration
 
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-## Backend Stats
-
-- **28** SQLAlchemy models
-- **44** REST API routes across 9 routers
-- **40** ICD-10 coded diseases in registry
-- **WebSocket** real-time event streaming at `/ws/events`
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
