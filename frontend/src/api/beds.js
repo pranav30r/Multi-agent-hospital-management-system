@@ -19,3 +19,7 @@ export async function bookBedManual(data) {
 export async function confirmPatientInBed(bedId) {
   return apiPost(`/beds/${bedId}/confirm-patient-in-bed`);
 }
+
+export async function releaseBed(bedId) {
+  return apiPost(`/beds/${bedId}/release`);
+}

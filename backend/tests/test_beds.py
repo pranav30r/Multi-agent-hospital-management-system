@@ -67,3 +67,10 @@ async def test_manual_bed_booking_lifecycle(test_db, auth_client):
     assert arrive_res.status_code == 200
     occupied_data = arrive_res.json()
     assert occupied_data["status"] == "OCCUPIED"
+
+    # 3. Release and discharge bed
+    release_res = await auth_client.post("/api/v1/beds/BED-ICU-01/release")
+    assert release_res.status_code == 200
+    released_data = release_res.json()
+    assert released_data["status"] == "AVAILABLE"
+    assert released_data["current_patient_id"] is None

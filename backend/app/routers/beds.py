@@ -112,3 +112,23 @@ async def confirm_patient_in_bed(
         actor_role=current_staff.role,
         tenant_id=current_staff.tenant_id
     )
+
+
+@router.post("/beds/{bed_id}/release", response_model=BedResponse)
+async def release_bed(
+    bed_id: str,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE", "NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Releases an occupied, reserved, or cleaning bed with pessimistic locking.
+    State transition: OCCUPIED/RESERVED -> AVAILABLE.
+    """
+    service = BedService(db)
+    return await service.release_bed(
+        bed_id=bed_id,
+        actor_id=current_staff.id,
+        actor_role=current_staff.role,
+        tenant_id=current_staff.tenant_id,
+        reason=f"Bed released by {current_staff.role} {current_staff.id}"
+    )

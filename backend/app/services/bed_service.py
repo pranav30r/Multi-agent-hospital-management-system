@@ -218,3 +218,90 @@ class BedService:
         }, tenant_id=tenant_id or "HOSP-DEFAULT")
 
         return bed
+
+    async def release_bed(
+        self,
+        bed_id: str,
+        actor_id: str,
+        actor_role: str,
+        tenant_id: Optional[str] = None,
+        reason: Optional[str] = None
+    ) -> Bed:
+        """
+        Releases an OCCUPIED, RESERVED, or CLEANING bed with row-level lock.
+        State transition: OCCUPIED/RESERVED -> AVAILABLE.
+        Updates active BedAssignment to RELEASED and sets released_at timestamp.
+        """
+        # 1. Pessimistic Row Lock on target Bed
+        bed_query = select(Bed).where(Bed.id == bed_id)
+        if tenant_id:
+            bed_query = bed_query.join(Department, Bed.department_id == Department.id).where(Department.tenant_id == tenant_id)
+        res_bed = await self.db.execute(bed_query.with_for_update())
+        bed = res_bed.scalars().first()
+        if not bed:
+            raise HTTPException(status_code=404, detail="Bed not found")
+        if bed.status not in ["OCCUPIED", "RESERVED", "CLEANING", "BLOCKED", "MAINTENANCE"]:
+            raise HTTPException(status_code=400, detail=f"Bed {bed_id} is already '{bed.status}'")
+
+        old_status = bed.status
+        old_patient_id = bed.current_patient_id
+        old_encounter_id = bed.current_encounter_id
+
+        # 2. Mutate Bed state
+        bed.status = "AVAILABLE"
+        bed.current_patient_id = None
+        bed.current_encounter_id = None
+        bed.last_cleaned_at = utc_now()
+
+        # 3. Update active BedAssignment record if exists
+        assignment_query = select(BedAssignment).where(
+            BedAssignment.bed_id == bed_id,
+            BedAssignment.status.in_(["RESERVED", "OCCUPIED"])
+        ).order_by(BedAssignment.reserved_at.desc())
+        res_assign = await self.db.execute(assignment_query)
+        assignment = res_assign.scalars().first()
+        if assignment:
+            assignment.status = "RELEASED"
+            assignment.released_at = utc_now()
+
+        # 4. If encounter was linked, update encounter bed assignment
+        if old_encounter_id:
+            res_enc = await self.db.execute(select(Encounter).where(Encounter.id == old_encounter_id))
+            encounter = res_enc.scalars().first()
+            if encounter and encounter.current_bed_id == bed_id:
+                encounter.current_bed_id = None
+
+        # 5. Audit Log
+        audit = AuditLog(
+            tenant_id=tenant_id or "HOSP-DEFAULT",
+            entity_type="bed",
+            entity_id=bed_id,
+            field_changed="status",
+            old_value=old_status,
+            new_value="AVAILABLE",
+            changed_by=actor_id,
+            change_reason=reason or "Bed discharged and released to available pool"
+        )
+        self.db.add(audit)
+
+        # 6. Commit atomic transaction
+        await self.db.commit()
+        await self.db.refresh(bed)
+        logger.info(f"Bed Released: Bed {bed_id} transitioned from {old_status} to AVAILABLE by {actor_id}")
+
+        from app.services.events import event_bus
+        await event_bus.publish({
+            "event_type": "BED_RELEASED",
+            "tenant_id": tenant_id or "HOSP-DEFAULT",
+            "source": "bed_service",
+            "payload": {
+                "bed_id": bed.id,
+                "bed_type": bed.bed_type,
+                "department_id": bed.department_id,
+                "previous_patient_id": old_patient_id,
+                "previous_encounter_id": old_encounter_id,
+                "status": "AVAILABLE"
+            }
+        }, tenant_id=tenant_id or "HOSP-DEFAULT")
+
+        return bed

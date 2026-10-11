@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { listBeds, listDepartments, bookBedManual, confirmPatientInBed } from "../api/beds.js";
+import { listBeds, listDepartments, bookBedManual, confirmPatientInBed, releaseBed } from "../api/beds.js";
 import { listActiveEncounters } from "../api/patients.js";
 import { useEvents } from "../context/EventContext.jsx";
 
@@ -135,6 +135,27 @@ function BedGrid() {
     try {
       await confirmPatientInBed(selectedBed.id);
       setActionSuccess(`Patient arrival confirmed. Bed ${selectedBed.id} is now OCCUPIED.`);
+      window.dispatchEvent(new CustomEvent('bed:updated'));
+      await fetchData();
+      setTimeout(() => {
+        handleCloseModal();
+      }, 1500);
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReleaseBed = async () => {
+    if (!selectedBed) return;
+    setActionLoading(true);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      await releaseBed(selectedBed.id);
+      setActionSuccess(`Bed ${selectedBed.id} successfully discharged and released to available pool.`);
       window.dispatchEvent(new CustomEvent('bed:updated'));
       await fetchData();
       setTimeout(() => {
@@ -383,9 +404,18 @@ function BedGrid() {
                     <button
                       type="button"
                       onClick={handleCloseModal}
-                      className="action-btn"
+                      style={{ padding: '8px 16px', background: '#e5e7eb', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '8px' }}
                     >
                       Close
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleReleaseBed}
+                      className="action-btn"
+                      disabled={actionLoading}
+                      style={{ background: '#dc2626' }}
+                    >
+                      {actionLoading ? "Discharging..." : "Discharge Patient & Release Bed"}
                     </button>
                   </div>
                 </div>
