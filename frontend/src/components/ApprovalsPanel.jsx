@@ -32,7 +32,7 @@ function ApprovalsPanel() {
 
   // Refresh on relevant WebSocket events
   useEffect(() => {
-    if (lastEvent && ['APPROVAL_REQUIRED', 'APPROVAL_REVIEWED'].includes(lastEvent.event_type)) {
+    if (lastEvent && ['APPROVAL_REQUIRED', 'APPROVAL_REVIEWED', 'APPROVAL_DECIDED'].includes(lastEvent.event_type)) {
       fetchApprovals();
     }
   }, [lastEvent, fetchApprovals]);

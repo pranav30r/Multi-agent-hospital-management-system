@@ -24,7 +24,7 @@ function EmergencyBanner() {
 
   // Refresh on emergency events
   useEffect(() => {
-    if (lastEvent && ['EMERGENCY_DECLARED', 'EMERGENCY_RESOLVED'].includes(lastEvent.event_type)) {
+    if (lastEvent && ['EMERGENCY_DECLARED', 'EMERGENCY_RESOLVED', 'EMERGENCY_ESCALATED'].includes(lastEvent.event_type)) {
       fetchEmergencies();
     }
   }, [lastEvent, fetchEmergencies]);
