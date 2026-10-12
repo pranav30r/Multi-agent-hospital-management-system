@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { listActiveEmergencies, resolveEmergency } from '../api/emergencies.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useEvents } from '../context/EventContext.jsx';
@@ -20,14 +20,33 @@ function EmergencyBanner() {
     }
   }, []);
 
-  useEffect(() => { fetchEmergencies(); }, [fetchEmergencies]);
-
-  // Refresh on emergency events
-  useEffect(() => {
-    if (lastEvent && ['EMERGENCY_DECLARED', 'EMERGENCY_RESOLVED', 'EMERGENCY_ESCALATED'].includes(lastEvent.event_type)) {
+  const debounceTimerRef = useRef(null);
+  const debouncedFetch = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
       fetchEmergencies();
+    }, 200);
+  }, [fetchEmergencies]);
+
+  useEffect(() => {
+    fetchEmergencies();
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, [fetchEmergencies]);
+
+  // Refresh on emergency events or reconnection
+  useEffect(() => {
+    if (lastEvent && ['EMERGENCY_DECLARED', 'EMERGENCY_RESOLVED', 'EMERGENCY_ESCALATED', 'SYSTEM_CONNECTED'].includes(lastEvent.event_type)) {
+      debouncedFetch();
     }
-  }, [lastEvent, fetchEmergencies]);
+  }, [lastEvent, debouncedFetch]);
+
+  useEffect(() => {
+    const handler = () => debouncedFetch();
+    window.addEventListener('websocket:reconnected', handler);
+    return () => window.removeEventListener('websocket:reconnected', handler);
+  }, [debouncedFetch]);
 
   const handleResolve = async (id) => {
     setResolving(id);

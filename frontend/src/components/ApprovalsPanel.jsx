@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { listPendingApprovals, reviewApproval } from '../api/approvals.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useEvents } from '../context/EventContext.jsx';
@@ -28,14 +28,38 @@ function ApprovalsPanel() {
     }
   }, []);
 
-  useEffect(() => { fetchApprovals(); }, [fetchApprovals]);
+  // Debounced refresh to prevent duplicate in-flight API requests
+  const debounceTimerRef = useRef(null);
+  const debouncedFetch = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      fetchApprovals();
+    }, 200);
+  }, [fetchApprovals]);
+
+  useEffect(() => {
+    fetchApprovals();
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, [fetchApprovals]);
 
   // Refresh on relevant WebSocket events
   useEffect(() => {
-    if (lastEvent && ['APPROVAL_REQUIRED', 'APPROVAL_REVIEWED', 'APPROVAL_DECIDED'].includes(lastEvent.event_type)) {
-      fetchApprovals();
+    if (lastEvent && ['APPROVAL_REQUIRED', 'APPROVAL_REVIEWED', 'APPROVAL_DECIDED', 'BED_RESERVED', 'SYSTEM_CONNECTED'].includes(lastEvent.event_type)) {
+      debouncedFetch();
     }
-  }, [lastEvent, fetchApprovals]);
+  }, [lastEvent, debouncedFetch]);
+
+  useEffect(() => {
+    const handler = () => debouncedFetch();
+    window.addEventListener('bed:updated', handler);
+    window.addEventListener('websocket:reconnected', handler);
+    return () => {
+      window.removeEventListener('bed:updated', handler);
+      window.removeEventListener('websocket:reconnected', handler);
+    };
+  }, [debouncedFetch]);
 
   const handleReview = async (approvalId, action, reason) => {
     setActionLoading(approvalId);
@@ -55,8 +79,23 @@ function ApprovalsPanel() {
   };
 
   if (loading) return <section className="approval-section"><p className="loading">Loading approvals...</p></section>;
-  if (error) return <section className="approval-section"><p className="error-message">{error}</p></section>;
-  if (approvals.length === 0) return <section className="approval-section"><h2>Human Review Queue</h2><p className="empty-state">No pending approvals</p></section>;
+  if (error) {
+    return (
+      <section className="approval-section">
+        <h2>Human Review Queue</h2>
+        <p className="error-message">{error}</p>
+        <button onClick={fetchApprovals} className="retry-btn">Retry</button>
+      </section>
+    );
+  }
+  if (approvals.length === 0) {
+    return (
+      <section className="approval-section">
+        <h2>Human Review Queue</h2>
+        <p className="empty-state">No pending approvals requiring clinician review</p>
+      </section>
+    );
+  }
 
   return (
     <section className="approval-section">

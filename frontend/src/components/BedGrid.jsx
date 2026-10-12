@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { listBeds, listDepartments, bookBedManual, confirmPatientInBed, releaseBed } from "../api/beds.js";
 import { listActiveEncounters } from "../api/patients.js";
 import { useEvents } from "../context/EventContext.jsx";
@@ -48,19 +48,47 @@ function BedGrid() {
     }
   }, []);
 
+  // Debounced refresh to prevent duplicate in-flight API calls
+  const debounceTimerRef = useRef(null);
+  const debouncedFetch = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      fetchData();
+    }, 200);
+  }, [fetchData]);
+
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
   }, [fetchData]);
 
-  // Refresh on bed-related WebSocket events
+  // Refresh on bed-related WebSocket events or reconnection
   useEffect(() => {
     if (lastEvent && lastEvent.event_type &&
-        (lastEvent.event_type.includes('BED') || lastEvent.event_type.includes('ADMISSION') || lastEvent.event_type.includes('DISCHARGE'))) {
-      fetchData();
+        (lastEvent.event_type.includes('BED') ||
+         lastEvent.event_type.includes('ADMISSION') ||
+         lastEvent.event_type.includes('DISCHARGE') ||
+         lastEvent.event_type.includes('APPROVAL') ||
+         lastEvent.event_type === 'SYSTEM_CONNECTED')) {
+      debouncedFetch();
     }
-  }, [lastEvent, fetchData]);
+  }, [lastEvent, debouncedFetch]);
+
+  useEffect(() => {
+    const handler = () => debouncedFetch();
+    window.addEventListener('bed:updated', handler);
+    window.addEventListener('approvals:updated', handler);
+    window.addEventListener('websocket:reconnected', handler);
+    return () => {
+      window.removeEventListener('bed:updated', handler);
+      window.removeEventListener('approvals:updated', handler);
+      window.removeEventListener('websocket:reconnected', handler);
+    };
+  }, [debouncedFetch]);
 
   const handleOpenBedModal = (bed) => {
     setSelectedBed(bed);
@@ -182,6 +210,7 @@ function BedGrid() {
       <section className="bed-section">
         <h2>Bed Occupancy</h2>
         <p className="error-message">{error}</p>
+        <button onClick={fetchData} className="retry-btn">Retry</button>
       </section>
     );
   }
@@ -190,7 +219,7 @@ function BedGrid() {
     return (
       <section className="bed-section">
         <h2>Bed Occupancy</h2>
-        <p className="empty-state">No beds found</p>
+        <p className="empty-state">No beds available in system inventory</p>
       </section>
     );
   }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { listActiveEncounters } from "../api/patients.js";
 import { useEvents } from "../context/EventContext.jsx";
 
@@ -28,19 +28,47 @@ function EmergencyQueue() {
     return () => clearInterval(interval);
   }, [fetchEncounters]);
 
-  // Refresh on encounter-related WebSocket events or local intake submissions
-  useEffect(() => {
-    if (lastEvent && lastEvent.event_type &&
-        (lastEvent.event_type.includes('ENCOUNTER') || lastEvent.event_type.includes('TRIAGE') || lastEvent.event_type.includes('PATIENT'))) {
+  // Debounced refresh to prevent duplicate in-flight API requests
+  const debounceTimerRef = useRef(null);
+  const debouncedFetch = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
       fetchEncounters();
-    }
-  }, [lastEvent, fetchEncounters]);
+    }, 200);
+  }, [fetchEncounters]);
 
   useEffect(() => {
-    const handler = () => fetchEncounters();
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, []);
+
+  // Refresh on encounter, bed, approval WebSocket events or reconnection
+  useEffect(() => {
+    if (lastEvent && lastEvent.event_type &&
+        (lastEvent.event_type.includes('ENCOUNTER') ||
+         lastEvent.event_type.includes('TRIAGE') ||
+         lastEvent.event_type.includes('PATIENT') ||
+         lastEvent.event_type.includes('BED') ||
+         lastEvent.event_type.includes('APPROVAL') ||
+         lastEvent.event_type === 'SYSTEM_CONNECTED')) {
+      debouncedFetch();
+    }
+  }, [lastEvent, debouncedFetch]);
+
+  useEffect(() => {
+    const handler = () => debouncedFetch();
     window.addEventListener('encounter:created', handler);
-    return () => window.removeEventListener('encounter:created', handler);
-  }, [fetchEncounters]);
+    window.addEventListener('bed:updated', handler);
+    window.addEventListener('approvals:updated', handler);
+    window.addEventListener('websocket:reconnected', handler);
+    return () => {
+      window.removeEventListener('encounter:created', handler);
+      window.removeEventListener('bed:updated', handler);
+      window.removeEventListener('approvals:updated', handler);
+      window.removeEventListener('websocket:reconnected', handler);
+    };
+  }, [debouncedFetch]);
 
   if (loading) {
     return (
@@ -56,6 +84,7 @@ function EmergencyQueue() {
       <section className="queue-section">
         <h2>Emergency Queue</h2>
         <p className="error-message">{error}</p>
+        <button onClick={fetchEncounters} className="retry-btn">Retry</button>
       </section>
     );
   }
@@ -64,7 +93,7 @@ function EmergencyQueue() {
     return (
       <section className="queue-section">
         <h2>Emergency Queue</h2>
-        <p className="empty-state">No active encounters</p>
+        <p className="empty-state">No active patients in emergency intake queue</p>
       </section>
     );
   }

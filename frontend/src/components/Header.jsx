@@ -52,9 +52,12 @@ function Header() {
           {statusText}
         </span>
 
-        {isConnected && (
-          <span className="ws-indicator" title="WebSocket connected">LIVE</span>
-        )}
+        <span
+          className={`ws-indicator ${isConnected ? "live" : "reconnecting"}`}
+          title={isConnected ? "Real-time WebSocket event stream connected" : "Reconnecting to real-time event stream..."}
+        >
+          {isConnected ? "● LIVE" : "○ RECONNECTING"}
+        </span>
 
         <span className="time">
           {time.toLocaleTimeString()}

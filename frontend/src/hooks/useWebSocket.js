@@ -11,6 +11,7 @@ export function useWebSocket() {
   const [lastEvent, setLastEvent] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef(null);
+  const hasConnectedRef = useRef(false);
 
   useEffect(() => {
     let pingTimer = null;
@@ -31,6 +32,10 @@ export function useWebSocket() {
           if (isDisposed) return;
           setIsConnected(true);
           retryDelay = 1000;
+          if (hasConnectedRef.current) {
+            window.dispatchEvent(new CustomEvent('websocket:reconnected'));
+          }
+          hasConnectedRef.current = true;
           pingTimer = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
               ws.send('ping');
@@ -68,12 +73,22 @@ export function useWebSocket() {
       }
     }
 
+    const handleOnline = () => {
+      if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+        clearTimeout(reconnectTimer);
+        retryDelay = 1000;
+        connect();
+      }
+    };
+    window.addEventListener('online', handleOnline);
+
     connect();
 
     return () => {
       isDisposed = true;
       clearInterval(pingTimer);
       clearTimeout(reconnectTimer);
+      window.removeEventListener('online', handleOnline);
       if (wsRef.current) {
         wsRef.current.close();
       }

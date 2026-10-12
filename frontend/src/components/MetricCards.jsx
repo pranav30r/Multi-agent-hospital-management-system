@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { getHospitalState } from "../api/dashboard.js";
 import { useEvents } from "../context/EventContext.jsx";
 
@@ -20,31 +20,46 @@ function MetricCards() {
     }
   }, []);
 
+  const debounceTimerRef = useRef(null);
+  const debouncedFetch = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      fetchState();
+    }, 200);
+  }, [fetchState]);
+
   useEffect(() => {
     fetchState();
     // Poll every 15 seconds for near-real-time updates
     const interval = setInterval(fetchState, 15000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
   }, [fetchState]);
 
   // Refresh on relevant WebSocket events
   useEffect(() => {
     if (lastEvent) {
-      fetchState();
+      debouncedFetch();
     }
-  }, [lastEvent, fetchState]);
+  }, [lastEvent, debouncedFetch]);
 
   useEffect(() => {
-    const handler = () => fetchState();
+    const handler = () => debouncedFetch();
     window.addEventListener('encounter:created', handler);
     window.addEventListener('emergency:updated', handler);
     window.addEventListener('approvals:updated', handler);
+    window.addEventListener('bed:updated', handler);
+    window.addEventListener('websocket:reconnected', handler);
     return () => {
       window.removeEventListener('encounter:created', handler);
       window.removeEventListener('emergency:updated', handler);
       window.removeEventListener('approvals:updated', handler);
+      window.removeEventListener('bed:updated', handler);
+      window.removeEventListener('websocket:reconnected', handler);
     };
-  }, [fetchState]);
+  }, [debouncedFetch]);
 
   if (loading) {
     return (
@@ -62,8 +77,9 @@ function MetricCards() {
   if (error) {
     return (
       <section className="metrics">
-        <div className="metric-card">
+        <div className="metric-card" style={{ gridColumn: 'span 4' }}>
           <p className="error-message">Failed to load dashboard: {error}</p>
+          <button onClick={fetchState} className="retry-btn">Retry</button>
         </div>
       </section>
     );
