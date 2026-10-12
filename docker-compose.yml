@@ -6,9 +6,9 @@ services:
     container_name: hospital_postgres
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
-      POSTGRES_DB: hospital_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      POSTGRES_DB: ${POSTGRES_DB:-hospital_db}
     ports:
       - "5432:5432"
     volumes:
@@ -38,9 +38,10 @@ services:
     container_name: hospital_backend
     restart: always
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/hospital_db
-      - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=hospital-super-secret-production-key-2026
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgrespassword}@postgres:5432/hospital_db}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - SECRET_KEY=${SECRET_KEY:-hospital-super-secret-key-change-in-production-2026}
+      - JWT_SECRET=${JWT_SECRET:-${SECRET_KEY:-hospital-super-secret-key-change-in-production-2026}}
     ports:
       - "8000:8000"
     healthcheck:

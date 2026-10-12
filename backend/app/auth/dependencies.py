@@ -32,6 +32,12 @@ async def get_current_user_token(token: Optional[str] = Depends(oauth2_scheme)) 
             detail="Invalid or expired authentication token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if payload.get("type") and payload.get("type") != "access_token":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return payload
 
 async def get_current_staff(
@@ -50,17 +56,17 @@ async def get_current_staff(
 
     # Verify that the JWT contains tenant_id and matches the authoritative Staff.tenant_id
     token_tenant = payload.get("tenant_id")
-    if staff.tenant_id:
-        if not token_tenant or token_tenant != staff.tenant_id:
-            logger.warning(
-                f"Tenant validation failed for staff {staff.id}: "
-                f"token_tenant='{token_tenant}', db_tenant='{staff.tenant_id}'"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token tenant does not match authoritative staff tenant",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    effective_staff_tenant = staff.tenant_id or "HOSP-DEFAULT"
+    if not token_tenant or token_tenant != effective_staff_tenant:
+        logger.warning(
+            f"Tenant validation failed for staff {staff.id}: "
+            f"token_tenant='{token_tenant}', db_tenant='{effective_staff_tenant}'"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token tenant does not match authoritative staff tenant",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return staff
 
 def require_roles(allowed_roles: List[str]):

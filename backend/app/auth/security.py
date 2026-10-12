@@ -14,8 +14,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifies a plain text password against the hashed password."""
     try:
         return pwd_context.verify(plain_password, hashed_password)
-    except Exception as e:
-        logger.error(f"Password verification error: {e}")
+    except Exception:
+        logger.error("Password verification error: failed to verify password hash")
         return False
 
 def get_password_hash(password: str) -> str:
@@ -37,10 +37,11 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     else:
         expire = utc_now() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
+    token_type = data.get("type", "access_token")
     to_encode.update({
         "exp": expire,
         "iat": utc_now(),
-        "type": "access_token"
+        "type": token_type
     })
     
     encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)

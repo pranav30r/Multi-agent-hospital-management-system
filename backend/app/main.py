@@ -98,6 +98,25 @@ app.include_router(events.router)
 
 from sqlalchemy import text
 from fastapi.responses import JSONResponse
+from fastapi import Request
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catches unhandled internal exceptions to prevent leaking tracebacks, database schema details,
+    or sensitive memory data to client callers. Logs the error securely on the server.
+    """
+    if isinstance(exc, StarletteHTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail}
+        )
+    logger.error(f"Unhandled server exception on {request.method} {request.url.path}: {exc.__class__.__name__}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal server error occurred. Please contact system support."}
+    )
 
 @app.get("/", tags=["System"])
 async def root():
