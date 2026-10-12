@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bed import Bed, BedAssignment
@@ -93,44 +93,63 @@ class BedService:
         if not encounter:
             raise HTTPException(status_code=404, detail="Encounter not found")
 
-        # 3. Apply state mutation on Bed
-        old_status = bed.status
-        bed.status = "RESERVED"
-        bed.current_patient_id = patient_id
-        bed.current_encounter_id = encounter_id
+        try:
+            # 3. Apply atomic state mutation on Bed (guarantees single-winner concurrency across PostgreSQL and SQLite)
+            old_status = bed.status
+            upd_stmt = (
+                update(Bed)
+                .where(Bed.id == bed_id, Bed.status == "AVAILABLE")
+                .values(
+                    status="RESERVED",
+                    current_patient_id=patient_id,
+                    current_encounter_id=encounter_id
+                )
+            )
+            upd_res = await self.db.execute(upd_stmt)
+            if upd_res.rowcount == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Bed {bed_id} is in '{bed.status}' state and cannot be booked"
+                )
+            bed.status = "RESERVED"
+            bed.current_patient_id = patient_id
+            bed.current_encounter_id = encounter_id
 
-        # 4. Synchronize Encounter status
-        encounter.current_bed_id = bed_id
-        encounter.bed_reserved_time = utc_now()
-        encounter.patient_status = "BED_RESERVED"
+            # 4. Synchronize Encounter status
+            encounter.current_bed_id = bed_id
+            encounter.bed_reserved_time = utc_now()
+            encounter.patient_status = "BED_RESERVED"
 
-        # 5. Insert BedAssignment record using trusted authenticated staff identity
-        assignment = BedAssignment(
-            bed_id=bed_id,
-            encounter_id=encounter_id,
-            patient_id=patient_id,
-            assigned_by=actor_id,
-            is_manual_override=True,
-            status="RESERVED"
-        )
-        self.db.add(assignment)
+            # 5. Insert BedAssignment record using trusted authenticated staff identity
+            assignment = BedAssignment(
+                bed_id=bed_id,
+                encounter_id=encounter_id,
+                patient_id=patient_id,
+                assigned_by=actor_id,
+                is_manual_override=True,
+                status="RESERVED"
+            )
+            self.db.add(assignment)
 
-        # 6. Record immutable AuditLog entry within the same transaction
-        audit = AuditLog(
-            tenant_id=tenant_id or "HOSP-DEFAULT",
-            entity_type="bed",
-            entity_id=bed_id,
-            field_changed="status",
-            old_value=old_status,
-            new_value="RESERVED",
-            changed_by=actor_id,
-            change_reason=f"Manual Bed Booking by {actor_role}: {reason}"
-        )
-        self.db.add(audit)
+            # 6. Record immutable AuditLog entry within the same transaction
+            audit = AuditLog(
+                tenant_id=tenant_id or "HOSP-DEFAULT",
+                entity_type="bed",
+                entity_id=bed_id,
+                field_changed="status",
+                old_value=old_status,
+                new_value="RESERVED",
+                changed_by=actor_id,
+                change_reason=f"Manual Bed Booking by {actor_role}: {reason}"
+            )
+            self.db.add(audit)
 
-        # 7. Commit atomic transaction
-        await self.db.commit()
-        await self.db.refresh(bed)
+            # 7. Commit atomic transaction
+            await self.db.commit()
+            await self.db.refresh(bed)
+        except Exception:
+            await self.db.rollback()
+            raise
         logger.info(f"Manual Bed Booking: Bed {bed_id} RESERVED for patient {patient_id} by authenticated staff {actor_id}")
 
         from app.services.events import event_bus
@@ -172,34 +191,38 @@ class BedService:
         if bed.status != "RESERVED":
             raise HTTPException(status_code=400, detail=f"Bed {bed_id} status is '{bed.status}', expected 'RESERVED'")
 
-        # 2. Mutate Bed state
-        old_status = bed.status
-        bed.status = "OCCUPIED"
+        try:
+            # 2. Mutate Bed state
+            old_status = bed.status
+            bed.status = "OCCUPIED"
 
-        # 3. Update Encounter admission timestamp
-        if bed.current_encounter_id:
-            res_enc = await self.db.execute(select(Encounter).where(Encounter.id == bed.current_encounter_id))
-            encounter = res_enc.scalars().first()
-            if encounter:
-                encounter.bed_occupied_time = utc_now()
-                encounter.patient_status = "ADMITTED"
+            # 3. Update Encounter admission timestamp
+            if bed.current_encounter_id:
+                res_enc = await self.db.execute(select(Encounter).where(Encounter.id == bed.current_encounter_id))
+                encounter = res_enc.scalars().first()
+                if encounter:
+                    encounter.bed_occupied_time = utc_now()
+                    encounter.patient_status = "ADMITTED"
 
-        # 4. Record AuditLog entry
-        audit = AuditLog(
-            tenant_id=tenant_id or "HOSP-DEFAULT",
-            entity_type="bed",
-            entity_id=bed_id,
-            field_changed="status",
-            old_value=old_status,
-            new_value="OCCUPIED",
-            changed_by=actor_id,
-            change_reason="Confirmed physical arrival of patient at bed"
-        )
-        self.db.add(audit)
+            # 4. Record AuditLog entry
+            audit = AuditLog(
+                tenant_id=tenant_id or "HOSP-DEFAULT",
+                entity_type="bed",
+                entity_id=bed_id,
+                field_changed="status",
+                old_value=old_status,
+                new_value="OCCUPIED",
+                changed_by=actor_id,
+                change_reason="Confirmed physical arrival of patient at bed"
+            )
+            self.db.add(audit)
 
-        # 5. Commit atomic transaction
-        await self.db.commit()
-        await self.db.refresh(bed)
+            # 5. Commit atomic transaction
+            await self.db.commit()
+            await self.db.refresh(bed)
+        except Exception:
+            await self.db.rollback()
+            raise
         logger.info(f"Patient Arrival Confirmed: Bed {bed_id} OCCUPIED")
 
         from app.services.events import event_bus
@@ -247,46 +270,50 @@ class BedService:
         old_patient_id = bed.current_patient_id
         old_encounter_id = bed.current_encounter_id
 
-        # 2. Mutate Bed state
-        bed.status = "AVAILABLE"
-        bed.current_patient_id = None
-        bed.current_encounter_id = None
-        bed.last_cleaned_at = utc_now()
+        try:
+            # 2. Mutate Bed state
+            bed.status = "AVAILABLE"
+            bed.current_patient_id = None
+            bed.current_encounter_id = None
+            bed.last_cleaned_at = utc_now()
 
-        # 3. Update active BedAssignment record if exists
-        assignment_query = select(BedAssignment).where(
-            BedAssignment.bed_id == bed_id,
-            BedAssignment.status.in_(["RESERVED", "OCCUPIED"])
-        ).order_by(BedAssignment.reserved_at.desc())
-        res_assign = await self.db.execute(assignment_query)
-        assignment = res_assign.scalars().first()
-        if assignment:
-            assignment.status = "RELEASED"
-            assignment.released_at = utc_now()
+            # 3. Update active BedAssignment record if exists
+            assignment_query = select(BedAssignment).where(
+                BedAssignment.bed_id == bed_id,
+                BedAssignment.status.in_(["RESERVED", "OCCUPIED"])
+            ).order_by(BedAssignment.reserved_at.desc())
+            res_assign = await self.db.execute(assignment_query)
+            assignment = res_assign.scalars().first()
+            if assignment:
+                assignment.status = "RELEASED"
+                assignment.released_at = utc_now()
 
-        # 4. If encounter was linked, update encounter bed assignment
-        if old_encounter_id:
-            res_enc = await self.db.execute(select(Encounter).where(Encounter.id == old_encounter_id))
-            encounter = res_enc.scalars().first()
-            if encounter and encounter.current_bed_id == bed_id:
-                encounter.current_bed_id = None
+            # 4. If encounter was linked, update encounter bed assignment
+            if old_encounter_id:
+                res_enc = await self.db.execute(select(Encounter).where(Encounter.id == old_encounter_id))
+                encounter = res_enc.scalars().first()
+                if encounter and encounter.current_bed_id == bed_id:
+                    encounter.current_bed_id = None
 
-        # 5. Audit Log
-        audit = AuditLog(
-            tenant_id=tenant_id or "HOSP-DEFAULT",
-            entity_type="bed",
-            entity_id=bed_id,
-            field_changed="status",
-            old_value=old_status,
-            new_value="AVAILABLE",
-            changed_by=actor_id,
-            change_reason=reason or "Bed discharged and released to available pool"
-        )
-        self.db.add(audit)
+            # 5. Audit Log
+            audit = AuditLog(
+                tenant_id=tenant_id or "HOSP-DEFAULT",
+                entity_type="bed",
+                entity_id=bed_id,
+                field_changed="status",
+                old_value=old_status,
+                new_value="AVAILABLE",
+                changed_by=actor_id,
+                change_reason=reason or "Bed discharged and released to available pool"
+            )
+            self.db.add(audit)
 
-        # 6. Commit atomic transaction
-        await self.db.commit()
-        await self.db.refresh(bed)
+            # 6. Commit atomic transaction
+            await self.db.commit()
+            await self.db.refresh(bed)
+        except Exception:
+            await self.db.rollback()
+            raise
         logger.info(f"Bed Released: Bed {bed_id} transitioned from {old_status} to AVAILABLE by {actor_id}")
 
         from app.services.events import event_bus
