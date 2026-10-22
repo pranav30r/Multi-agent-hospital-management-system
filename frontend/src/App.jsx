@@ -32,7 +32,6 @@ function Dashboard() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [cmdkOpen, setCmdkOpen] = useState(false);
-  const [overviewSubView, setOverviewSubView] = useState("all");
 
   const renderContent = () => {
     // Route guards: redirect non-admins attempting to access admin views
@@ -61,32 +60,8 @@ function Dashboard() {
           <div className="tab-pane overview-pane">
             <MetricCards />
 
-            {/* Single clean toolbar row: tabs + button */}
-            <div className="command-center-toolbar">
-              <div className="switcher-pills">
-                <button
-                  type="button"
-                  className={`switcher-pill ${overviewSubView === "all" ? "active" : ""}`}
-                  onClick={() => setOverviewSubView("all")}
-                >
-                  Complete Operations View
-                </button>
-                <button
-                  type="button"
-                  className={`switcher-pill ${overviewSubView === "triage" ? "active" : ""}`}
-                  onClick={() => setOverviewSubView("triage")}
-                >
-                  Triage Queue Focus
-                </button>
-                <button
-                  type="button"
-                  className={`switcher-pill ${overviewSubView === "beds" ? "active" : ""}`}
-                  onClick={() => setOverviewSubView("beds")}
-                >
-                  Bed Management Focus
-                </button>
-              </div>
-
+            {/* Clean top action toolbar */}
+            <div className="command-center-toolbar" style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
               <button
                 type="button"
                 className="btn-quick-intake"
@@ -96,23 +71,17 @@ function Dashboard() {
               </button>
             </div>
 
-            {(overviewSubView === "all" || overviewSubView === "triage") && (
-              <section className="operations-section">
-                <EmergencyQueue />
-              </section>
-            )}
+            <section className="operations-section">
+              <EmergencyQueue />
+            </section>
 
-            {(overviewSubView === "all" || overviewSubView === "beds") && (
-              <section className="operations-section">
-                <BedGrid />
-              </section>
-            )}
+            <section className="operations-section">
+              <BedGrid />
+            </section>
 
-            {overviewSubView === "all" && (
-              <section className="operations-section">
-                <ApprovalsPanel />
-              </section>
-            )}
+            <section className="operations-section">
+              <ApprovalsPanel />
+            </section>
           </div>
         );
 
