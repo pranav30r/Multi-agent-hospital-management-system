@@ -196,6 +196,7 @@ export const DemoProvider = ({ children }) => {
   const [demoMode, setDemoMode] = useState(() => {
     return localStorage.getItem('medicenter_demo_mode') === 'true';
   });
+  const [demoState, setDemoState] = useState(DEMO_DATA);
 
   const toggleDemoMode = () => {
     setDemoMode((prev) => {
@@ -206,13 +207,24 @@ export const DemoProvider = ({ children }) => {
     });
   };
 
+  const updateDemoPatientBed = (patientId, bedId) => {
+    setDemoState((prev) => ({
+      ...prev,
+      patients: (prev.patients || []).map((p) =>
+        p.patient_id === patientId || p.id === patientId
+          ? { ...p, assigned_bed_id: bedId, current_bed_id: bedId }
+          : p
+      )
+    }));
+  };
+
   return (
-    <DemoContext.Provider value={{ demoMode, toggleDemoMode, demoData: DEMO_DATA }}>
+    <DemoContext.Provider value={{ demoMode, toggleDemoMode, demoData: demoState, updateDemoPatientBed }}>
       {children}
     </DemoContext.Provider>
   );
 };
 
 export const useDemo = () => {
-  return useContext(DemoContext) || { demoMode: false, toggleDemoMode: () => {}, demoData: DEMO_DATA };
+  return useContext(DemoContext) || { demoMode: false, toggleDemoMode: () => {}, demoData: DEMO_DATA, updateDemoPatientBed: () => {} };
 };

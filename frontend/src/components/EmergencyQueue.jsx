@@ -11,7 +11,7 @@ export { getAiRecommendedBed };
 
 function EmergencyQueue({ onAssignBed }) {
   const { lastEvent } = useEvents();
-  const { demoMode, demoData } = useDemo();
+  const { demoMode, demoData, updateDemoPatientBed } = useDemo();
   const [encounters, setEncounters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -107,16 +107,27 @@ function EmergencyQueue({ onAssignBed }) {
     setAssignError(null);
     setAssignSuccess(null);
     try {
-      try {
-        await bookBedManual({
-          bed_id: proposedBedId,
-          encounter_id: enc.id,
-          patient_id: enc.patient_id,
-          reason: `Clinician approved AI allocation (${enc.ai_recommendation || 'Emergency Triage'})`,
-        });
+      if (!demoMode) {
         try {
-          await confirmPatientInBed(proposedBedId);
+          await bookBedManual({
+            bed_id: proposedBedId,
+            encounter_id: enc.id,
+            patient_id: enc.patient_id,
+            reason: `Clinician approved AI allocation (${enc.ai_recommendation || 'Emergency Triage'})`,
+          });
+          try {
+            await confirmPatientInBed(proposedBedId);
+          } catch {
+            await updateBedStatus(
+              proposedBedId,
+              "OCCUPIED",
+              `Allocated to ${enc.patient_name || enc.patient_id} (AI Recommendation Approved)`,
+              enc.patient_id,
+              enc.id
+            );
+          }
         } catch {
+          // Direct occupancy update
           await updateBedStatus(
             proposedBedId,
             "OCCUPIED",
@@ -125,21 +136,14 @@ function EmergencyQueue({ onAssignBed }) {
             enc.id
           );
         }
-      } catch {
-        // Direct occupancy update
-        await updateBedStatus(
-          proposedBedId,
-          "OCCUPIED",
-          `Allocated to ${enc.patient_name || enc.patient_id} (AI Recommendation Approved)`,
-          enc.patient_id,
-          enc.id
-        );
+      } else if (updateDemoPatientBed) {
+        updateDemoPatientBed(enc.patient_id || enc.id, proposedBedId);
       }
 
       setEncounters((prev) =>
         prev.map((e) =>
           e.id === enc.id || e.patient_id === enc.patient_id
-            ? { ...e, assigned_bed_id: proposedBedId }
+            ? { ...e, assigned_bed_id: proposedBedId, current_bed_id: proposedBedId }
             : e
         )
       );
@@ -158,7 +162,7 @@ function EmergencyQueue({ onAssignBed }) {
       );
 
       if (selectedEncounter && (selectedEncounter.id === enc.id || selectedEncounter.patient_id === enc.patient_id)) {
-        setSelectedEncounter((prev) => ({ ...prev, assigned_bed_id: proposedBedId }));
+        setSelectedEncounter((prev) => ({ ...prev, assigned_bed_id: proposedBedId, current_bed_id: proposedBedId }));
       }
 
       const successMsg = `Bed ${proposedBedId} allocated to ${enc.patient_name || enc.patient_id}`;
@@ -210,22 +214,26 @@ function EmergencyQueue({ onAssignBed }) {
     setAssignError(null);
     setAssignSuccess(null);
     try {
-      try {
-        await updateBedStatus(
-          selectedBedToAssign,
-          "OCCUPIED",
-          `Allocated to ${selectedEncounter.patient_name || selectedEncounter.patient_id} (${allocationReason})`,
-          selectedEncounter.patient_id,
-          selectedEncounter.id
-        );
-      } catch (err) {
-        console.warn("API update bed note:", err);
+      if (!demoMode) {
+        try {
+          await updateBedStatus(
+            selectedBedToAssign,
+            "OCCUPIED",
+            `Allocated to ${selectedEncounter.patient_name || selectedEncounter.patient_id} (${allocationReason})`,
+            selectedEncounter.patient_id,
+            selectedEncounter.id
+          );
+        } catch (err) {
+          console.warn("API update bed note:", err);
+        }
+      } else if (updateDemoPatientBed) {
+        updateDemoPatientBed(selectedEncounter.patient_id || selectedEncounter.id, selectedBedToAssign);
       }
 
       setEncounters((prev) =>
         prev.map((enc) =>
           enc.id === selectedEncounter.id || enc.patient_id === selectedEncounter.patient_id
-            ? { ...enc, assigned_bed_id: selectedBedToAssign }
+            ? { ...enc, assigned_bed_id: selectedBedToAssign, current_bed_id: selectedBedToAssign }
             : enc
         )
       );
@@ -246,6 +254,7 @@ function EmergencyQueue({ onAssignBed }) {
       setSelectedEncounter((prev) => ({
         ...prev,
         assigned_bed_id: selectedBedToAssign,
+        current_bed_id: selectedBedToAssign,
       }));
 
       setAssignSuccess(`Bed ${selectedBedToAssign} successfully assigned!`);
@@ -273,11 +282,15 @@ function EmergencyQueue({ onAssignBed }) {
     if (!bedId) return;
     setAssignLoading(true);
     try {
-      await updateBedStatus(bedId, "AVAILABLE", "Patient discharged or moved");
+      if (!demoMode) {
+        await updateBedStatus(bedId, "AVAILABLE", "Patient discharged or moved");
+      } else if (updateDemoPatientBed) {
+        updateDemoPatientBed(selectedEncounter.patient_id || selectedEncounter.id, null);
+      }
       setEncounters((prev) =>
         prev.map((enc) =>
           enc.id === selectedEncounter.id || enc.patient_id === selectedEncounter.patient_id
-            ? { ...enc, assigned_bed_id: null }
+            ? { ...enc, assigned_bed_id: null, current_bed_id: null }
             : enc
         )
       );
@@ -288,7 +301,7 @@ function EmergencyQueue({ onAssignBed }) {
             : b
         )
       );
-      setSelectedEncounter((prev) => ({ ...prev, assigned_bed_id: null }));
+      setSelectedEncounter((prev) => ({ ...prev, assigned_bed_id: null, current_bed_id: null }));
       setAssignSuccess(`Bed ${bedId} released to available pool.`);
       window.dispatchEvent(
         new CustomEvent("bed:updated", {
@@ -336,14 +349,16 @@ function EmergencyQueue({ onAssignBed }) {
   const proposedBedsMap = useMemo(() => {
     const claimed = new Set();
     encounters.forEach((e) => {
-      if (e.assigned_bed_id) claimed.add(e.assigned_bed_id);
+      const assigned = e.assigned_bed_id || e.current_bed_id;
+      if (assigned) claimed.add(assigned);
     });
 
     const mapping = {};
     filtered.forEach((enc) => {
-      if (enc.assigned_bed_id) {
-        mapping[enc.id] = enc.assigned_bed_id;
-        claimed.add(enc.assigned_bed_id);
+      const assigned = enc.assigned_bed_id || enc.current_bed_id;
+      if (assigned) {
+        mapping[enc.id] = assigned;
+        claimed.add(assigned);
       } else {
         const proposed = getAiRecommendedBed(enc, bedsList, claimed);
         mapping[enc.id] = proposed;
@@ -511,7 +526,7 @@ function EmergencyQueue({ onAssignBed }) {
                         <Icon name="sparkles" size={13} className="text-primary" />
                         <div className="ai-rec-cell">
                           <span className="ai-rec-text">{enc.ai_recommendation || 'Assign to Emergency Bay'}</span>
-                          {!enc.assigned_bed_id && (
+                          {!(enc.assigned_bed_id || enc.current_bed_id) && (
                             <span className="ai-target-tag">
                               AI Suggests: <strong>{proposedBed}</strong>
                             </span>
@@ -520,14 +535,14 @@ function EmergencyQueue({ onAssignBed }) {
                       </div>
                     </td>
                     <td className="text-right" onClick={(e) => e.stopPropagation()}>
-                      {enc.assigned_bed_id ? (
+                      {(enc.assigned_bed_id || enc.current_bed_id) ? (
                         <button
                           type="button"
                           className="btn btn-secondary btn-sm assigned-bed-btn"
                           onClick={() => setSelectedEncounter(enc)}
-                          title={`Assigned Bed: ${enc.assigned_bed_id}`}
+                          title={`Assigned Bed: ${enc.assigned_bed_id || enc.current_bed_id}`}
                         >
-                          🛏 {enc.assigned_bed_id.replace("BED-", "")}
+                          🛏 {(enc.assigned_bed_id || enc.current_bed_id).replace("BED-", "")}
                         </button>
                       ) : (
                         <div className="ai-decision-cell">
@@ -617,7 +632,7 @@ function EmergencyQueue({ onAssignBed }) {
                   {selectedEncounter.ai_recommendation || "Patient symptoms warrant immediate telemetry monitoring and formal assessment by the attending ER physician."}
                 </p>
 
-                {!selectedEncounter.assigned_bed_id && (
+                {!(selectedEncounter.assigned_bed_id || selectedEncounter.current_bed_id) && (
                   <div className="ai-drawer-proposal-banner">
                     <div className="ai-drawer-proposal-info">
                       <span className="ai-proposal-label">AI Recommended Bed:</span>
@@ -667,11 +682,11 @@ function EmergencyQueue({ onAssignBed }) {
                 </div>
               )}
 
-              {selectedEncounter.assigned_bed_id ? (
+              {(selectedEncounter.assigned_bed_id || selectedEncounter.current_bed_id) ? (
                 <div className="assigned-bed-card">
                   <div className="assigned-bed-info">
                     <span className="assigned-bed-badge">
-                      🛏 Assigned Bed: <strong>{selectedEncounter.assigned_bed_id}</strong>
+                      🛏 Assigned Bed: <strong>{selectedEncounter.assigned_bed_id || selectedEncounter.current_bed_id}</strong>
                     </span>
                     <span className="assigned-bed-status">Status: Occupied / Active Care</span>
                   </div>
@@ -679,7 +694,7 @@ function EmergencyQueue({ onAssignBed }) {
                     type="button"
                     className="btn btn-outline btn-sm"
                     style={{ color: "#dc2626", borderColor: "#fca5a5" }}
-                    onClick={() => handleDischargeFromBed(selectedEncounter.assigned_bed_id)}
+                    onClick={() => handleDischargeFromBed(selectedEncounter.assigned_bed_id || selectedEncounter.current_bed_id)}
                     disabled={assignLoading}
                   >
                     {assignLoading ? "Vacating..." : "Vacate / Discharge Bed"}
