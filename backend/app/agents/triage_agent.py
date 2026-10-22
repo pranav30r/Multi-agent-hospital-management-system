@@ -75,6 +75,10 @@ class TriageAgent(BaseAgent):
         # Check for specialized equipment or telemetry requirements
         requires_telemetry = any(rf.get("source") in ["vitals.heart_rate", "vitals.spo2"] for rf in red_flags) or severity in ["CRITICAL", "HIGH"]
         requires_isolation = any("fever" in (encounter.chief_complaint or "").lower() and "rash" in (encounter.chief_complaint or "").lower() for _ in [1])
+        requires_ventilator = esi_level == 1 and (
+            (encounter.spo2 is not None and encounter.spo2 < 85)
+            or (encounter.gcs_score is not None and encounter.gcs_score <= 8)
+        )
 
         rationale = (
             f"Triage Assessment: ESI Level {esi_level} ({priority_level}), Severity: {severity} (Score: {score:.1f}), "
@@ -92,6 +96,7 @@ class TriageAgent(BaseAgent):
             "clinical_urgency": clinical_urgency,
             "requires_telemetry": requires_telemetry,
             "requires_isolation": requires_isolation,
+            "requires_ventilator": requires_ventilator,
             "rationale": rationale,
             "timestamp": utc_now_iso()
         }
