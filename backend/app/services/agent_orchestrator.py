@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.patient import Patient, Encounter
 from app.models.bed import Bed
 from app.models.staff import Staff
+from app.models.equipment import Equipment
 from app.models.department import Department
 from app.models.emergency import EmergencyEvent
 from app.models.clinical_document import ClinicalDocument
@@ -191,15 +192,17 @@ class BedManagerAgent:
 
         # Match optimal candidate beds
         matching_beds = [b for b in available_beds if b.bed_type in target_bed_types]
-        if requires_isolation:
-            iso_beds = [b for b in matching_beds if b.is_isolation]
-            if iso_beds:
-                matching_beds = iso_beds
-
-        if requires_telemetry:
-            telem_beds = [b for b in matching_beds if b.has_telemetry or b.bed_type == "ICU"]
-            if telem_beds:
-                matching_beds = telem_beds
+        matching_beds = [b for b in matching_beds if not requires_isolation or b.is_isolation]
+        matching_beds = [b for b in matching_beds if not requires_telemetry or b.has_telemetry or b.bed_type == "ICU"]
+        equipment_ready = True
+        if triage_output.get("requires_ventilator"):
+            equipment_result = await self.db.execute(
+                select(func.count(Equipment.id)).join(Department, Equipment.department_id == Department.id)
+                .where(Department.tenant_id == tenant_id, Equipment.resource_type == "VENTILATOR", Equipment.status == "AVAILABLE")
+            )
+            equipment_ready = (equipment_result.scalar() or 0) > 0
+            if not equipment_ready:
+                matching_beds = []
 
         if matching_beds:
             primary_bed = matching_beds[0]
@@ -213,17 +216,13 @@ class BedManagerAgent:
             rec_dept_id = primary_bed.department_id
             rec_bed_type = primary_bed.bed_type
         elif available_beds:
-            # Fallback bed from available general inventory
-            fallback_bed = available_beds[0]
-            alt_beds = [b.id for b in available_beds[1:3]]
+            alt_beds = []
             feasibility = "CONSTRAINED"
-            rationale = (
-                f"No direct {care_level} beds available. Fallback bed {fallback_bed.id} ({fallback_bed.bed_type}) "
-                f"in department {fallback_bed.department_id} proposed under capacity pressure."
-            )
-            rec_bed_id = fallback_bed.id
-            rec_dept_id = fallback_bed.department_id
-            rec_bed_type = fallback_bed.bed_type
+            rationale = ("No bed satisfies all requested clinical constraints; no unsafe fallback allocation is recommended. "
+                         + ("No available ventilator is present." if not equipment_ready else "Review capacity or revise clinical requirements."))
+            rec_bed_id = None
+            rec_dept_id = None
+            rec_bed_type = None
         else:
             feasibility = "UNAVAILABLE"
             rationale = f"Critical bed shortage: zero available beds across all hospital units (Occupancy: 100%). Surge holding area required."
@@ -437,12 +436,12 @@ class StaffSchedulerAgent:
         res = await self.db.execute(staff_query)
         all_staff: List[Staff] = res.scalars().all()
 
-        doctors = [s for s in all_staff if s.role == "DOCTOR"]
-        nurses = [s for s in all_staff if s.role in ["NURSE", "CHARGE_NURSE"]]
+        doctors = [s for s in all_staff if s.role == "DOCTOR" and s.current_workload < s.max_workload]
+        nurses = [s for s in all_staff if s.role in ["NURSE", "CHARGE_NURSE"] and s.current_workload < s.max_workload]
 
         # Prioritize staff in target department, then hospital-wide
-        dept_doctors = [d for d in doctors if d.department_id == dept_id] or doctors
-        dept_nurses = [n for n in nurses if n.department_id == dept_id] or nurses
+        dept_doctors = [d for d in doctors if d.department_id == dept_id]
+        dept_nurses = [n for n in nurses if n.department_id == dept_id]
 
         # Select least loaded doctor and nurse
         assigned_doc = min(dept_doctors, key=lambda d: d.current_workload) if dept_doctors else None
@@ -979,6 +978,20 @@ class CoordinatorAgent:
                 if bed_resp.get("department_id") or bed_resp.get("counter_department_id"):
                     target_dept_p0 = bed_resp.get("department_id") or bed_resp.get("counter_department_id")
 
+        department_result = await self.db.execute(select(Department).where(
+            Department.id == target_dept_p0, Department.tenant_id == tenant_id)) if target_dept_p0 else None
+        department = department_result.scalars().first() if department_result else None
+        capacity_result = await self.db.execute(select(func.count(Bed.id)).where(
+            Bed.department_id == target_dept_p0)) if target_dept_p0 else None
+        department_bed_count = capacity_result.scalar() if capacity_result else 0
+        occupancy_score = max(0.0, 1.0 - float(bed_output.get("occupancy_rate", 1.0)))
+        capacity_score = min(1.0, department.total_beds / max(department_bed_count, 1)) if department else 0.0
+        staff_feasible = staff_output.get("feasibility") in ["FEASIBLE", "REBALANCED"]
+        bed_feasible = bool(target_bed_p0 and bed_output.get("feasibility") == "FEASIBLE")
+        primary_score = round(0.4 * occupancy_score + 0.25 * capacity_score
+                              + 0.2 * float(staff_feasible)
+                              + 0.15 * (1.0 - min(1.0, len(conflicts) / 3)), 3)
+
         # Plan 0: Primary Optimal / Negotiated Plan
         candidates.append({
             "plan_index": 0,
@@ -989,12 +1002,12 @@ class CoordinatorAgent:
             "assigned_doctor_id": assigned_doc_p0,
             "assigned_nurse_id": assigned_nurse_p0,
             "emergency_level": emergency_output.get("emergency_level"),
-            "objective_score": 0.92 if not conflicts else (0.85 if negotiation_status == "RESOLVED" else 0.70),
-            "waiting_time_score": 0.95,
-            "resource_util_score": 0.88,
-            "staff_balance_score": 0.90 if staff_output["feasibility"] in ["FEASIBLE", "REBALANCED"] else 0.65,
-            "hard_constraint_pass": len(conflicts) == 0 or negotiation_status == "RESOLVED",
-            "description": f"Direct placement in {bed_output.get('bed_type', 'unit')} with assigned doctor {assigned_doc_p0}."
+            "objective_score": primary_score,
+            "waiting_time_score": occupancy_score,
+            "resource_util_score": capacity_score,
+            "staff_balance_score": 1.0 if staff_feasible else 0.0,
+            "hard_constraint_pass": bed_feasible and staff_feasible and (len(conflicts) == 0 or negotiation_status == "RESOLVED"),
+            "description": f"Bed feasibility: {bed_output.get('feasibility')}; staffing: {staff_output.get('feasibility')}; department beds: {department_bed_count}/{department.total_beds if department else 'unknown'}; occupancy: {bed_output.get('occupancy_rate', 1.0):.0%}; conflicts: {len(conflicts)}."
         })
 
         # Plan 1: Step-Down / Alternative Plan
@@ -1008,12 +1021,12 @@ class CoordinatorAgent:
             "assigned_doctor_id": assigned_doc_p0,
             "assigned_nurse_id": assigned_nurse_p0,
             "emergency_level": emergency_output.get("emergency_level"),
-            "objective_score": 0.82,
-            "waiting_time_score": 0.85,
-            "resource_util_score": 0.80,
-            "staff_balance_score": 0.85,
-            "hard_constraint_pass": True,
-            "description": f"Alternative placement in bed {alt_bed} with continuous telemetry monitoring."
+            "objective_score": round(0.4 * occupancy_score + 0.25 * capacity_score + 0.2 * float(staff_feasible) + 0.15 * (1.0 - min(1.0, len(conflicts) / 3)), 3) if alt_bed else 0.0,
+            "waiting_time_score": occupancy_score,
+            "resource_util_score": capacity_score,
+            "staff_balance_score": 1.0 if staff_feasible else 0.0,
+            "hard_constraint_pass": bool(alt_bed and staff_feasible and bed_feasible),
+            "description": f"Alternative bed {alt_bed or 'unavailable'}; bed feasibility: {bed_output.get('feasibility')}; staffing: {staff_output.get('feasibility')}."
         })
 
         # Plan 2: Contingency / Surge Stabilization Plan
@@ -1035,8 +1048,9 @@ class CoordinatorAgent:
         })
 
         # Select Best Plan
-        selected_plan_idx = 0 if candidates[0]["hard_constraint_pass"] else 1
-        selected_plan = candidates[selected_plan_idx]
+        feasible_plans = [plan for plan in candidates if plan["hard_constraint_pass"]]
+        selected_plan = max(feasible_plans, key=lambda plan: plan["objective_score"]) if feasible_plans else candidates[2]
+        selected_plan_idx = selected_plan["plan_index"]
 
         # 3. Determine Action Type, Risk Level, and Human Approval Requirement
         care_level = triage_output["recommended_care_level"]
