@@ -28,10 +28,8 @@ if config.config_file_name is not None:
 # Set target metadata for 'autogenerate' support
 target_metadata = Base.metadata
 
-# Use configured sqlalchemy.url if provided, otherwise fallback to application settings
-target_db_url = config.get_main_option("sqlalchemy.url")
-if not target_db_url:
-    target_db_url = settings.DATABASE_URL
+# Prioritize environment variable or application settings over alembic.ini defaults
+target_db_url = os.getenv("DATABASE_URL") or settings.DATABASE_URL or config.get_main_option("sqlalchemy.url")
 
 if target_db_url.startswith("sqlite:///"):
     target_db_url = target_db_url.replace("sqlite:///", "sqlite+aiosqlite:///")

@@ -184,23 +184,21 @@ async def test_complete_synthetic_patient_journey(auth_client, admin_client, tes
     })
     assert dup_review.status_code == 400, "Duplicate approval review must be rejected"
 
-    # ─── 11. Reserve ICU Bed ──────────────────────────────────────────────────
-    bed_book_resp = await auth_client.post("/api/v1/beds/book-manual", json={
-        "bed_id": "BED-ICU-01",
-        "encounter_id": encounter_id,
-        "patient_id": patient_id,
-        "reason": "Direct clinical allocation following approved ICU triage"
-    })
-    assert bed_book_resp.status_code == 200, f"Bed booking failed: {bed_book_resp.text}"
-    assert bed_book_resp.json()["status"] == "RESERVED"
+    # ─── 11. Verify Bed is Reserved via Approval Execution Pipeline ───────────
+    async with test_db() as session:
+        bed_db = await session.get(Bed, "BED-ICU-01")
+        assert bed_db is not None
+        assert bed_db.status == "RESERVED"
+        assert bed_db.current_patient_id == patient_id
+        assert bed_db.current_encounter_id == encounter_id
 
-    # Verify duplicate bed booking is rejected
+    # Verify duplicate bed booking is rejected (Bed is already reserved)
     dup_bed = await auth_client.post("/api/v1/beds/book-manual", json={
         "bed_id": "BED-ICU-01",
         "encounter_id": encounter_id,
         "patient_id": patient_id
     })
-    assert dup_bed.status_code == 400, "Double bed booking must be rejected"
+    assert dup_bed.status_code == 400, "Double bed booking must be rejected"  
 
     # ─── 12. Confirm Patient Arrival in Bed ────────────────────────────────────
     arrival_resp = await auth_client.post("/api/v1/beds/BED-ICU-01/confirm-patient-in-bed")

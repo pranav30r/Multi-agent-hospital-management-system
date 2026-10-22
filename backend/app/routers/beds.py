@@ -112,3 +112,52 @@ async def confirm_patient_in_bed(
         actor_role=current_staff.role,
         tenant_id=current_staff.tenant_id
     )
+
+
+@router.post("/beds/{bed_id}/release", response_model=BedResponse)
+async def release_bed(
+    bed_id: str,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE", "NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Releases an occupied, reserved, or cleaning bed with pessimistic locking.
+    State transition: OCCUPIED/RESERVED -> AVAILABLE.
+    """
+    service = BedService(db)
+    return await service.release_bed(
+        bed_id=bed_id,
+        actor_id=current_staff.id,
+        actor_role=current_staff.role,
+        tenant_id=current_staff.tenant_id,
+        reason=f"Bed released by {current_staff.role} {current_staff.id}"
+    )
+
+
+class BedStatusUpdateRequest(BaseModel):
+    status: str = Field(..., examples=["AVAILABLE", "OCCUPIED", "RESERVED", "MAINTENANCE", "CLEANING", "BLOCKED"])
+    reason: Optional[str] = Field(default="Status manually updated by clinician")
+
+
+@router.patch("/beds/{bed_id}/status", response_model=BedResponse)
+@router.post("/beds/{bed_id}/status", response_model=BedResponse)
+async def update_bed_status(
+    bed_id: str,
+    req: BedStatusUpdateRequest,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE", "NURSE", "RECEPTIONIST"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Directly update bed status (AVAILABLE, OCCUPIED, RESERVED, MAINTENANCE, CLEANING, BLOCKED).
+    Allows clinical staff to immediately mark beds as available, occupied/emergency, or maintenance.
+    """
+    service = BedService(db)
+    return await service.update_bed_status(
+        bed_id=bed_id,
+        status=req.status.upper(),
+        actor_id=current_staff.id,
+        actor_role=current_staff.role,
+        tenant_id=current_staff.tenant_id,
+        reason=req.reason
+    )
+

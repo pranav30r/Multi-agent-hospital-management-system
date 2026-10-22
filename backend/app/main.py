@@ -14,6 +14,7 @@ logger = logging.getLogger("hospital_system")
 
 from app.core.redis import redis_manager
 from app.routers.events import ws_manager
+from app.services.agent_event_listener import get_event_listener
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -22,8 +23,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database connection established.")
     await redis_manager.initialize()
+    event_listener = get_event_listener()
+    await event_listener.start()
     yield
     logger.info("Shutting down Hospital Command Center Backend...")
+    await event_listener.stop()
     await ws_manager.close_all()
     await redis_manager.close()
 
@@ -98,6 +102,25 @@ app.include_router(events.router)
 
 from sqlalchemy import text
 from fastapi.responses import JSONResponse
+from fastapi import Request
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catches unhandled internal exceptions to prevent leaking tracebacks, database schema details,
+    or sensitive memory data to client callers. Logs the error securely on the server.
+    """
+    if isinstance(exc, StarletteHTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail}
+        )
+    logger.error(f"Unhandled server exception on {request.method} {request.url.path}: {exc.__class__.__name__}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal server error occurred. Please contact system support."}
+    )
 
 @app.get("/", tags=["System"])
 async def root():

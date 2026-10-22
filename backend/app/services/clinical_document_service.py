@@ -253,3 +253,36 @@ class ClinicalDocumentService:
         await self.db.commit()
         await self.db.refresh(doc)
         return doc
+
+    async def draft_discharge_summary(
+        self,
+        encounter_id: str,
+        llm_service: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Drafts a structured discharge summary using LLMService from encounter and patient records.
+        Pure recommendation: non-destructive and transactional safe.
+        """
+        from app.llm import LLMService
+        service = llm_service or LLMService()
+        enc_res = await self.db.execute(select(Encounter).where(Encounter.id == encounter_id))
+        encounter = enc_res.scalars().first()
+        if not encounter:
+            raise HTTPException(status_code=404, detail=f"Encounter {encounter_id} not found")
+
+        p_res = await self.db.execute(select(Patient).where(Patient.id == encounter.patient_id))
+        patient = p_res.scalars().first()
+        if not patient:
+            raise HTTPException(status_code=404, detail=f"Patient {encounter.patient_id} not found")
+
+        context = {
+            "patient_name": f"{patient.first_name} {patient.last_name}",
+            "patient_id": patient.id,
+            "encounter_id": encounter.id,
+            "department": encounter.current_department_id,
+            "chief_complaint": encounter.chief_complaint,
+            "arrival_time": str(encounter.arrival_time) if encounter.arrival_time else None,
+            "diagnoses": encounter.diagnosed_diseases or [],
+            "treatment_summary": encounter.diagnosis_notes
+        }
+        return await service.generate_discharge_summary(context)

@@ -30,11 +30,11 @@ async def test_01_bed_double_booking_postgres(pg_db):
         )
         enc1 = Encounter(
             id="ENC-CONC-01", patient_id="PAT-CONC-01", chief_complaint="Severe Chest Pain", esi_level=1,
-            current_department_id="DEP-EMERGENCY"
+            current_department_id="DEP-ER"
         )
         enc2 = Encounter(
             id="ENC-CONC-02", patient_id="PAT-CONC-02", chief_complaint="Respiratory Distress", esi_level=2,
-            current_department_id="DEP-EMERGENCY"
+            current_department_id="DEP-ER"
         )
         init_session.add_all([p1, p2, enc1, enc2])
         await init_session.commit()
@@ -126,11 +126,11 @@ async def test_02_equipment_double_booking_postgres(pg_db):
         )
         enc1 = Encounter(
             id="ENC-EQ-01", patient_id="PAT-EQ-01", chief_complaint="Head Trauma", esi_level=1,
-            current_department_id="DEP-EMERGENCY"
+            current_department_id="DEP-ER"
         )
         enc2 = Encounter(
             id="ENC-EQ-02", patient_id="PAT-EQ-02", chief_complaint="Abdominal Pain", esi_level=2,
-            current_department_id="DEP-EMERGENCY"
+            current_department_id="DEP-ER"
         )
         init_session.add_all([p1, p2, enc1, enc2])
         await init_session.commit()

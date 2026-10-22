@@ -1,6 +1,6 @@
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from sqlalchemy import select, desc
@@ -43,7 +43,13 @@ async def list_audit_logs(
     Query the immutable audit trail.
     Every state change in the hospital system is logged here for compliance and traceability.
     """
-    query = select(AuditLog)
+    if not current_staff.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required"
+        )
+
+    query = select(AuditLog).where(AuditLog.tenant_id == current_staff.tenant_id)
     if entity_type:
         query = query.where(AuditLog.entity_type == entity_type)
     if entity_id:
@@ -64,11 +70,22 @@ async def get_entity_history(
     db: AsyncSession = Depends(get_db)
 ):
     """Get the complete change history for a specific entity (e.g., all changes to BED-ICU-07)."""
-    result = await db.execute(
+    if not current_staff.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required"
+        )
+
+    query = (
         select(AuditLog)
-        .where(AuditLog.entity_type == entity_type, AuditLog.entity_id == entity_id)
+        .where(
+            AuditLog.tenant_id == current_staff.tenant_id,
+            AuditLog.entity_type == entity_type,
+            AuditLog.entity_id == entity_id
+        )
         .order_by(desc(AuditLog.timestamp))
     )
+    result = await db.execute(query)
     return result.scalars().all()
 
 
@@ -78,7 +95,13 @@ async def audit_stats(
     db: AsyncSession = Depends(get_db)
 ):
     """Get audit trail summary statistics."""
-    result = await db.execute(select(AuditLog))
+    if not current_staff.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required"
+        )
+
+    result = await db.execute(select(AuditLog).where(AuditLog.tenant_id == current_staff.tenant_id))
     logs = result.scalars().all()
 
     by_type = {}

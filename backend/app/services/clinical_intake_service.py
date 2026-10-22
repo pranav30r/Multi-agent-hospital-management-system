@@ -574,6 +574,29 @@ class ClinicalIntakeService:
         await self.db.commit()
         await self.db.refresh(session)
         logger.info(f"Clinical intake session {session_id} marked COMPLETED (100% finished)")
+
+        # Publish PATIENT_INTAKE_COMPLETED domain event
+        try:
+            from app.services.events import event_bus
+            eff_tenant = getattr(session, "tenant_id", None)
+            if not eff_tenant:
+                p_res = await self.db.execute(select(Patient.tenant_id).where(Patient.id == session.patient_id))
+                eff_tenant = p_res.scalar_one_or_none() or "HOSP-DEFAULT"
+
+            await event_bus.publish({
+                "event_type": "PATIENT_INTAKE_COMPLETED",
+                "tenant_id": eff_tenant,
+                "source": "clinical_intake_service",
+                "payload": {
+                    "session_id": session.id,
+                    "encounter_id": session.encounter_id,
+                    "patient_id": session.patient_id,
+                    "completion_percentage": session.completion_percentage
+                }
+            }, tenant_id=eff_tenant)
+        except Exception as pub_err:
+            logger.warning(f"Failed to publish PATIENT_INTAKE_COMPLETED event for session {session_id}: {pub_err}")
+
         return session
 
     async def review_intake_session(
@@ -1080,3 +1103,12 @@ class ClinicalIntakeService:
         )
         result = await self.db.execute(stmt)
         return result.scalars().all()
+
+    async def extract_nlp_summary(self, raw_text: str, llm_service: Optional[Any] = None) -> Dict[str, Any]:
+        """
+        Extracts structured symptoms, mentioned vitals, and candidate acuity cues using LLMService.
+        Pure recommendation: non-destructive.
+        """
+        from app.llm import LLMService
+        service = llm_service or LLMService()
+        return await service.extract_intake_nlp(raw_text)

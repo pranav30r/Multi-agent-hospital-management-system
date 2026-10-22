@@ -379,3 +379,278 @@ async def test_multi_tenant_department_code_uniqueness(test_db):
         with pytest.raises(IntegrityError):
             await session.commit()
         await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_token_missing_tenant_id_when_staff_belongs_to_tenant_is_rejected(client: AsyncClient):
+    """
+    Task 2 requirement: Test a token completely missing tenant_id claim
+    when the corresponding staff record belongs to a tenant.
+    Must return HTTP 401 Unauthorized with zero data mutation.
+    """
+    from jose import jwt
+    from app.config import settings
+
+    # Explicitly create raw token without tenant_id claim
+    raw_payload = {
+        "sub": "DOC-001",
+        "role": "DOCTOR",
+        "name": "Dr. No Tenant",
+        "department_id": "DEP-ER"
+    }
+    token_no_tenant = jwt.encode(raw_payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    headers = {"Authorization": f"Bearer {token_no_tenant}"}
+
+    res = await client.get("/api/v1/patients", headers=headers)
+    assert res.status_code == 401
+    assert res.json()["detail"] == "Token tenant does not match authoritative staff tenant"
+
+
+@pytest.mark.asyncio
+async def test_cross_tenant_audit_logs_isolation(client: AsyncClient, test_db):
+    """
+    Task 2 requirement: Administrator in Tenant B must only see Tenant B audit logs.
+    Zero audit records from Tenant A can leak to Tenant B.
+    """
+    await seed_tenant_b(test_db)
+
+    # 1. Add audit log in Tenant A
+    async with test_db() as session:
+        log_a = AuditLog(
+            id="AUD-TENANT-A-01",
+            tenant_id="HOSP-DEFAULT",
+            entity_type="bed",
+            entity_id="BED-ICU-01",
+            field_changed="status",
+            old_value="AVAILABLE",
+            new_value="OCCUPIED",
+            changed_by="DOC-001",
+            change_reason="Tenant A Routine admission"
+        )
+        session.add(log_a)
+
+        # 2. Add audit log in Tenant B
+        log_b = AuditLog(
+            id="AUD-TENANT-B-01",
+            tenant_id="HOSP-RIVAL",
+            entity_type="bed",
+            entity_id="BED-RIV-01",
+            field_changed="status",
+            old_value="AVAILABLE",
+            new_value="OCCUPIED",
+            changed_by="ADM-RIVAL-01",
+            change_reason="Tenant B Rival admission"
+        )
+        session.add(log_b)
+        await session.commit()
+
+    # 3. Query audit logs as Administrator of Tenant B
+    token_b = create_access_token({
+        "sub": "ADM-RIVAL-01",
+        "role": "ADMINISTRATOR",
+        "name": "Rival Admin",
+        "department_id": "DEP-RIVAL",
+        "tenant_id": "HOSP-RIVAL"
+    })
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    res_audit_b = await client.get("/api/v1/audit", headers=headers_b)
+    assert res_audit_b.status_code == 200
+    b_log_ids = [l["id"] for l in res_audit_b.json()]
+    assert "AUD-TENANT-B-01" in b_log_ids
+    assert "AUD-TENANT-A-01" not in b_log_ids
+
+
+@pytest.mark.asyncio
+async def test_cross_tenant_approval_isolation_and_review_rejection(client: AsyncClient, test_db):
+    """
+    Task 2 requirement: Human-in-the-loop approvals must be strictly isolated.
+    Doctor in Tenant B cannot see or approve Tenant A pending approvals.
+    """
+    from app.models.agent import ApprovalItem, AgentDecision
+
+    await seed_tenant_b(test_db)
+
+    async with test_db() as session:
+        dec_a = AgentDecision(
+            id="DEC-TEST-TENANT-A",
+            tenant_id="HOSP-DEFAULT",
+            agent_id="triage_agent",
+            action_type="RECOMMEND_BED",
+            proposed_action={"bed_id": "BED-ICU-01"},
+            reasoning="Critical surge support",
+            risk_level="HIGH",
+            status="PENDING"
+        )
+        session.add(dec_a)
+
+        app_a = ApprovalItem(
+            id="APP-TEST-TENANT-A",
+            tenant_id="HOSP-DEFAULT",
+            decision_id="DEC-TEST-TENANT-A",
+            agent_id="triage_agent",
+            action_type="RECOMMEND_BED",
+            risk_level="HIGH",
+            proposed_action={"bed_id": "BED-ICU-01"},
+            reasoning="Critical surge support",
+            status="PENDING"
+        )
+        session.add(app_a)
+        await session.commit()
+
+    token_b = create_access_token({
+        "sub": "DOC-RIVAL-01",
+        "role": "DOCTOR",
+        "name": "Dr. Rival",
+        "department_id": "DEP-RIVAL",
+        "tenant_id": "HOSP-RIVAL"
+    })
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    # Query pending approvals as Tenant B -> Tenant A approval must not appear
+    res_pending = await client.get("/api/v1/approvals/pending", headers=headers_b)
+    assert res_pending.status_code == 200
+    pending_ids = [a["id"] for a in res_pending.json()]
+    assert "APP-TEST-TENANT-A" not in pending_ids
+
+    # Attempt to review Tenant A approval as Tenant B -> 404 Not Found
+    res_review = await client.post(
+        "/api/v1/approvals/APP-TEST-TENANT-A/review",
+        headers=headers_b,
+        json={"action": "APPROVE"}
+    )
+    assert res_review.status_code == 404
+
+    # Verify no mutation occurred in database
+    async with test_db() as session:
+        app_check = await session.get(ApprovalItem, "APP-TEST-TENANT-A")
+        assert app_check.status == "PENDING"
+        assert app_check.reviewed_by is None
+
+
+@pytest.mark.asyncio
+async def test_audit_endpoints_reject_staff_missing_tenant_id(client: AsyncClient, test_db):
+    """
+    Verify that all three audit endpoints fail closed with HTTP 403 ('Tenant context required')
+    when the authenticated administrator has a missing/null tenant context.
+    Verify that zero global audit records are returned.
+    """
+    from jose import jwt
+    from sqlalchemy import text
+    from app.config import settings
+
+    # Seed an administrator with empty tenant_id
+    async with test_db() as session:
+        adm = await session.get(Staff, "ADM-NOTENANT-01")
+        if not adm:
+            adm = Staff(
+                id="ADM-NOTENANT-01",
+                first_name="NoTenant",
+                last_name="Admin",
+                role="ADMINISTRATOR",
+                department_id="DEP-ER",
+                status="AVAILABLE",
+                current_workload=0,
+                max_workload=50
+            )
+            session.add(adm)
+            await session.commit()
+        await session.execute(text("UPDATE staff SET tenant_id = '' WHERE id = 'ADM-NOTENANT-01'"))
+        await session.commit()
+
+    token = jwt.encode(
+        {"sub": "ADM-NOTENANT-01", "role": "ADMINISTRATOR"},
+        settings.JWT_SECRET,
+        algorithm=settings.JWT_ALGORITHM
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. list_audit_logs -> must reject with 401/403
+    res_list = await client.get("/api/v1/audit", headers=headers)
+    assert res_list.status_code in [401, 403]
+
+    # 2. get_entity_history -> must reject with 401/403
+    res_entity = await client.get("/api/v1/audit/entity/bed/BED-ICU-01", headers=headers)
+    assert res_entity.status_code in [401, 403]
+
+    # 3. audit_stats -> must reject with 401/403
+    res_stats = await client.get("/api/v1/audit/stats", headers=headers)
+    assert res_stats.status_code in [401, 403]
+
+
+@pytest.mark.asyncio
+async def test_audit_endpoints_valid_tenant_pagination_and_stats(client: AsyncClient, test_db):
+    """
+    Verify that audit endpoints with valid tenant context:
+    - Enforce tenant isolation on list, entity history, and statistics.
+    - Support pagination (limit parameter) strictly scoped to tenant.
+    - Accurately aggregate stats strictly within the caller's tenant.
+    """
+    await seed_tenant_b(test_db)
+
+    async with test_db() as session:
+        # Add 3 logs for Tenant B
+        for i in range(3):
+            session.add(AuditLog(
+                id=f"AUD-PAGINATION-B-{i}",
+                tenant_id="HOSP-RIVAL",
+                entity_type="bed",
+                entity_id=f"BED-RIV-0{i}",
+                field_changed="status",
+                old_value="AVAILABLE",
+                new_value="OCCUPIED",
+                changed_by="ADM-RIVAL-01",
+                change_reason=f"Tenant B event {i}"
+            ))
+        # Add 2 logs for Tenant A
+        for j in range(2):
+            session.add(AuditLog(
+                id=f"AUD-PAGINATION-A-{j}",
+                tenant_id="HOSP-DEFAULT",
+                entity_type="bed",
+                entity_id=f"BED-ICU-0{j}",
+                field_changed="status",
+                old_value="AVAILABLE",
+                new_value="OCCUPIED",
+                changed_by="DOC-001",
+                change_reason=f"Tenant A event {j}"
+            ))
+        await session.commit()
+
+    token_b = create_access_token({
+        "sub": "ADM-RIVAL-01",
+        "role": "ADMINISTRATOR",
+        "name": "Rival Admin",
+        "department_id": "DEP-RIVAL",
+        "tenant_id": "HOSP-RIVAL"
+    })
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    # 1. Pagination check: limit=2 should return exactly 2 items, all belonging to HOSP-RIVAL
+    res_page = await client.get("/api/v1/audit?limit=2", headers=headers_b)
+    assert res_page.status_code == 200
+    page_data = res_page.json()
+    assert len(page_data) == 2
+    for item in page_data:
+        assert "AUD-PAGINATION-A" not in item["id"]
+
+    # 2. Entity history check: scoped to tenant
+    res_entity = await client.get("/api/v1/audit/entity/bed/BED-RIV-00", headers=headers_b)
+    assert res_entity.status_code == 200
+    entity_logs = res_entity.json()
+    assert len(entity_logs) >= 1
+    assert any(log["id"] == "AUD-PAGINATION-B-0" for log in entity_logs)
+
+    # Cross-tenant entity history: Tenant B admin querying Tenant A bed history -> empty list
+    res_cross_entity = await client.get("/api/v1/audit/entity/bed/BED-ICU-00", headers=headers_b)
+    assert res_cross_entity.status_code == 200
+    assert len(res_cross_entity.json()) == 0
+
+    # 3. Stats check: aggregated strictly within tenant B
+    res_stats = await client.get("/api/v1/audit/stats", headers=headers_b)
+    assert res_stats.status_code == 200
+    stats = res_stats.json()
+    assert stats["total_entries"] >= 3
+    # Tenant A actor DOC-001 must not appear in Tenant B stats
+    assert "DOC-001" not in stats["by_actor"]
+    assert "ADM-RIVAL-01" in stats["by_actor"]

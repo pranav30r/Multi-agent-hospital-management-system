@@ -42,6 +42,8 @@ class RedisManager:
             logger.info("Redis connection established successfully.")
         except Exception as exc:
             self._is_connected = False
+            self._client = None
+            self._pool = None
             logger.warning(
                 f"Redis connection initialization could not reach Redis server ({exc}). "
                 "The application will operate in degraded mode without distributed real-time events."
@@ -49,8 +51,11 @@ class RedisManager:
 
     async def get_client(self) -> Optional[aioredis.Redis]:
         """Returns the active async Redis client instance, or None if uninitialized/unreachable."""
-        if self._client is None and self._pool is None:
-            await self.initialize()
+        if not self._is_connected:
+            if self._pool is None:
+                await self.initialize()
+            if not self._is_connected:
+                return None
         return self._client
 
     async def ping(self) -> bool:

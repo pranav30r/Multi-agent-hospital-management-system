@@ -6,6 +6,7 @@
 
 -- 1. PERFORMANCE B-TREE INDEXES
 CREATE INDEX IF NOT EXISTS idx_encounters_patient_id ON encounters(patient_id);
+CREATE INDEX IF NOT EXISTS idx_encounters_patient_arrival ON encounters(patient_id, arrival_time DESC);
 CREATE INDEX IF NOT EXISTS idx_encounters_status_dept ON encounters(status, current_department_id);
 CREATE INDEX IF NOT EXISTS idx_encounters_esi_score ON encounters(esi_score);
 CREATE INDEX IF NOT EXISTS idx_beds_dept_status ON beds(department_id, status);
@@ -15,6 +16,9 @@ CREATE INDEX IF NOT EXISTS idx_equipment_dept_status ON equipment(department_id,
 CREATE INDEX IF NOT EXISTS idx_approval_items_status ON approval_items(status);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_obs_tenant_patient_observed ON clinical_observations(tenant_id, patient_id, observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_obs_tenant_patient_type_observed ON clinical_observations(tenant_id, patient_id, observation_type, observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_patients_tenant_phone ON patients(tenant_id, contact_phone);
 
 -- 2. LIVE DASHBOARD CAPACITY VIEW
 CREATE OR REPLACE VIEW v_hospital_live_capacity AS

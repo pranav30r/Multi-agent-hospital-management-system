@@ -240,6 +240,8 @@ async def test_real_redis_pubsub_if_available():
     test_tenant = "REAL-TEST-TENANT"
     pubsub = await bus.get_pubsub_for_tenant(test_tenant)
     assert pubsub is not None
+    # Ensure Redis subscription is acknowledged before publishing
+    await pubsub.get_message(ignore_subscribe_messages=False, timeout=1.0)
 
     test_event = {
         "event_type": "INTEGRATION_TEST_EVENT",

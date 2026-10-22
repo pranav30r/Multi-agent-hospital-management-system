@@ -2,13 +2,13 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import ApprovalItem, AgentDecision, AuditLog
 from app.models.bed import Bed, BedAssignment
-from app.models.patient import Encounter, Patient
 from app.models.department import Department
+from app.models.patient import Patient, Encounter
 from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
@@ -124,98 +124,101 @@ class ApprovalService:
             raise HTTPException(status_code=404, detail="Approval item not found")
         if item.status != "PENDING":
             raise HTTPException(status_code=400, detail=f"Approval item is already in '{item.status}' state")
-        effective_tenant = tenant_id or getattr(item, "tenant_id", "HOSP-DEFAULT")
 
         action_clean = action.upper()
         if action_clean not in ["APPROVE", "MODIFY", "REJECT"]:
             raise HTTPException(status_code=400, detail="Action must be APPROVE, MODIFY, or REJECT")
-        reserved_bed = None
 
-        # Mutate approval record
-        item.status = action_clean
-        item.reviewed_by = actor_id
-        item.review_action = action_clean
-        item.reviewed_at = utc_now()
-        item.modification = modification
-        item.rejection_reason = rejection_reason
-
-        # Synchronize linked AgentDecision
-        res_dec = await self.db.execute(
-            select(AgentDecision).where(AgentDecision.id == item.decision_id)
-        )
-        decision = res_dec.scalars().first()
-        if decision:
-            decision.status = action_clean
-            decision.resolved_at = utc_now()
-
-        if action_clean in ["APPROVE", "MODIFY"]:
-            proposed = dict(item.proposed_action or {})
-            if action_clean == "MODIFY":
-                if not modification:
-                    raise HTTPException(status_code=400, detail="Modification payload is required")
-                proposed.update(modification)
-            if proposed.get("action") in {"ALLOCATE_BED", "OBSERVE"}:
-                bed_id = proposed.get("target_bed_id")
-                encounter_id = proposed.get("encounter_id")
-                patient_id = proposed.get("patient_id")
-                if not bed_id or not encounter_id or not patient_id:
-                    raise HTTPException(status_code=400, detail="Recommendation is missing bed, encounter, or patient")
-                bed_query = select(Bed).join(Department, Bed.department_id == Department.id).where(
-                    Bed.id == bed_id, Department.tenant_id == effective_tenant
-                ).with_for_update()
-                bed_result = await self.db.execute(bed_query)
-                bed = bed_result.scalars().first()
-                encounter_result = await self.db.execute(
-                    select(Encounter).join(Patient, Encounter.patient_id == Patient.id)
-                    .where(Encounter.id == encounter_id,
-                           Encounter.patient_id == patient_id,
-                           Patient.tenant_id == effective_tenant)
-                    .with_for_update()
+        try:
+            # Atomic state transition from PENDING -> action_clean (guarantees single-winner concurrency across PostgreSQL and SQLite)
+            review_time = utc_now()
+            upd_stmt = (
+                update(ApprovalItem)
+                .where(ApprovalItem.id == approval_id, ApprovalItem.status == "PENDING")
+                .values(
+                    status=action_clean,
+                    reviewed_by=actor_id,
+                    review_action=action_clean,
+                    reviewed_at=review_time,
+                    modification=modification,
+                    rejection_reason=rejection_reason
                 )
-                encounter = encounter_result.scalars().first()
-                if not encounter or not bed:
-                    raise HTTPException(status_code=404, detail="Recommended bed or encounter not found for this hospital")
-                if bed.status != "AVAILABLE" or encounter.current_bed_id:
-                    raise HTTPException(status_code=409, detail="Recommended bed or encounter is no longer available")
-                if action_clean == "MODIFY":
-                    item.proposed_action = proposed
-                bed.status = "RESERVED"
-                reserved_bed = bed
-                bed.current_patient_id = patient_id
-                bed.current_encounter_id = encounter_id
-                encounter.current_bed_id = bed_id
-                encounter.bed_reserved_time = utc_now()
-                encounter.patient_status = "BED_RESERVED"
-                self.db.add(BedAssignment(bed_id=bed_id, encounter_id=encounter_id,
-                    patient_id=patient_id, assigned_by=actor_id, is_manual_override=False, status="RESERVED"))
-                self.db.add(AuditLog(tenant_id=effective_tenant, entity_type="bed", entity_id=bed_id,
-                    field_changed="status", old_value="AVAILABLE", new_value="RESERVED", changed_by=actor_id,
-                    change_reason=f"Approved agent recommendation {approval_id}", approval_id=approval_id))
+            )
+            upd_res = await self.db.execute(upd_stmt)
+            if upd_res.rowcount == 0:
+                raise HTTPException(status_code=400, detail=f"Approval item is already in '{item.status}' state")
 
-        # AuditLog entry within same atomic transaction
-        change_reason = f"Human Review ({actor_role}): {action_clean}"
-        if modification:
-            change_reason += f" (Modified: {modification})"
-        if rejection_reason:
-            change_reason += f" (Reason: {rejection_reason})"
+            item.status = action_clean
+            item.reviewed_by = actor_id
+            item.review_action = action_clean
+            item.reviewed_at = review_time
+            item.modification = modification
+            item.rejection_reason = rejection_reason
 
-        audit = AuditLog(
-            tenant_id=effective_tenant,
-            entity_type="approval",
-            entity_id=approval_id,
-            field_changed="status",
-            old_value="PENDING",
-            new_value=action_clean,
-            changed_by=actor_id,
-            change_reason=change_reason
-        )
-        self.db.add(audit)
+            # Synchronize linked AgentDecision
+            res_dec = await self.db.execute(
+                select(AgentDecision).where(AgentDecision.id == item.decision_id)
+            )
+            decision = res_dec.scalars().first()
+            if decision:
+                decision.status = action_clean
+                decision.resolved_at = utc_now()
 
-        await self.db.commit()
-        await self.db.refresh(item)
+            # AuditLog entry within same atomic transaction
+            change_reason = f"Human Review ({actor_role}): {action_clean}"
+            if modification:
+                change_reason += f" (Modified: {modification})"
+            if rejection_reason:
+                change_reason += f" (Reason: {rejection_reason})"
+
+            effective_tenant = tenant_id or getattr(item, "tenant_id", "HOSP-DEFAULT")
+            audit = AuditLog(
+                tenant_id=effective_tenant,
+                entity_type="approval",
+                entity_id=approval_id,
+                field_changed="status",
+                old_value="PENDING",
+                new_value=action_clean,
+                changed_by=actor_id,
+                change_reason=change_reason
+            )
+            self.db.add(audit)
+
+            # Consequential Resource Execution for APPROVED / MODIFIED actions
+            executed_bed_id = None
+            if action_clean in ["APPROVE", "MODIFY"]:
+                executed_bed_id = await self._execute_approved_action(
+                    item=item,
+                    decision=decision,
+                    action=action_clean,
+                    modification=modification,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    tenant_id=effective_tenant
+                )
+
+            await self.db.commit()
+            await self.db.refresh(item)
+        except Exception:
+            await self.db.rollback()
+            raise
         logger.info(f"APPROVAL RESOLVED: Item {approval_id} -> {action_clean} by authenticated staff {actor_id}")
 
         from app.services.events import event_bus
+        if executed_bed_id:
+            await event_bus.publish({
+                "event_type": "BED_RESERVED",
+                "tenant_id": effective_tenant,
+                "source": "approval_execution_pipeline",
+                "payload": {
+                    "bed_id": executed_bed_id,
+                    "patient_id": item.proposed_action.get("patient_id") if isinstance(item.proposed_action, dict) else None,
+                    "encounter_id": item.proposed_action.get("encounter_id") if isinstance(item.proposed_action, dict) else None,
+                    "status": "RESERVED",
+                    "approved_by": actor_id
+                }
+            }, tenant_id=effective_tenant)
+
         await event_bus.publish({
             "event_type": "APPROVAL_DECIDED",
             "tenant_id": effective_tenant,
@@ -228,13 +231,155 @@ class ApprovalService:
                 "reviewed_at": item.reviewed_at.isoformat() if item.reviewed_at else None
             }
         }, tenant_id=effective_tenant)
-        if reserved_bed:
-            await event_bus.publish({"event_type": "BED_RESERVED", "tenant_id": effective_tenant,
-                "source": "approval_service", "payload": {"bed_id": reserved_bed.id, "patient_id": reserved_bed.current_patient_id,
-                "encounter_id": reserved_bed.current_encounter_id, "status": reserved_bed.status, "approval_id": approval_id}},
-                tenant_id=effective_tenant)
 
         return item
+
+    async def _execute_approved_action(
+        self,
+        item: ApprovalItem,
+        decision: Optional[AgentDecision],
+        action: str,
+        modification: Optional[Dict[str, Any]],
+        actor_id: str,
+        actor_role: str,
+        tenant_id: str
+    ) -> Optional[str]:
+        """
+        Executes consequential resource allocation for an approved AI proposal.
+        Revalidates tenant boundaries, encounter ownership, bed live status, and compatibility.
+        Maintains transactional atomicity: if resource execution fails, raises HTTPException
+        before transaction commit so that the approval remains unexecuted.
+        """
+        base_payload = item.proposed_action or {}
+        if not isinstance(base_payload, dict):
+            return None
+
+        effective_payload = dict(base_payload)
+        if action == "MODIFY" and modification and isinstance(modification, dict):
+            effective_payload.update(modification)
+
+        target_bed_id = effective_payload.get("target_bed_id") or effective_payload.get("bed_id")
+        enc_id = effective_payload.get("encounter_id") or (getattr(decision, "encounter_id", None) if decision else None)
+
+        # If no bed or encounter specified, no physical bed allocation to perform
+        if not target_bed_id or not enc_id:
+            return None
+
+        # 1. Revalidate Encounter and tenant ownership
+        enc_query = (
+            select(Encounter)
+            .join(Patient, Encounter.patient_id == Patient.id)
+            .where(Encounter.id == enc_id)
+        )
+        if tenant_id:
+            enc_query = enc_query.where(Patient.tenant_id == tenant_id)
+
+        res_enc = await self.db.execute(enc_query)
+        encounter = res_enc.scalars().first()
+        if not encounter:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Encounter {enc_id} not found or does not belong to tenant '{tenant_id}'"
+            )
+
+        pat_id = effective_payload.get("patient_id") or encounter.patient_id
+        if encounter.patient_id != pat_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Encounter patient mismatch: expected '{encounter.patient_id}', got '{pat_id}'"
+            )
+
+        # 2. Revalidate Target Bed existence, tenant ownership, and live status with pessimistic lock
+        bed_query = (
+            select(Bed)
+            .join(Department, Bed.department_id == Department.id)
+            .where(Bed.id == target_bed_id)
+        )
+        if tenant_id:
+            bed_query = bed_query.where(Department.tenant_id == tenant_id)
+
+        res_bed = await self.db.execute(bed_query.with_for_update())
+        bed = res_bed.scalars().first()
+        if not bed:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Bed {target_bed_id} not found in tenant '{tenant_id}'"
+            )
+
+        if bed.status != "AVAILABLE":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bed {target_bed_id} is in '{bed.status}' state and is not available for reservation"
+            )
+
+        # 3. Check bed compatibility if specified (e.g. ICU requirement)
+        required_bed_type = effective_payload.get("bed_type")
+        if required_bed_type and str(required_bed_type).upper() == "ICU" and bed.bed_type not in ["ICU", "CARDIAC_MONITOR"]:
+            if action != "MODIFY":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Bed {target_bed_id} type '{bed.bed_type}' is incompatible with required ICU level of care"
+                )
+
+        # 4. Apply State Mutation on Bed with atomic CAS check
+        old_bed_status = bed.status
+        bed_upd_stmt = (
+            update(Bed)
+            .where(Bed.id == target_bed_id, Bed.status == "AVAILABLE")
+            .values(
+                status="RESERVED",
+                current_patient_id=pat_id,
+                current_encounter_id=enc_id
+            )
+        )
+        bed_upd_res = await self.db.execute(bed_upd_stmt)
+        if bed_upd_res.rowcount == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bed {target_bed_id} is in '{bed.status}' state and is not available for reservation"
+            )
+        bed.status = "RESERVED"
+        bed.current_patient_id = pat_id
+        bed.current_encounter_id = enc_id
+
+        # 5. Synchronize Encounter
+        encounter.current_bed_id = target_bed_id
+        encounter.bed_reserved_time = utc_now()
+        encounter.patient_status = "BED_RESERVED"
+        if effective_payload.get("assigned_doctor_id"):
+            encounter.assigned_doctor_id = effective_payload["assigned_doctor_id"]
+        if effective_payload.get("assigned_nurse_id"):
+            encounter.assigned_nurse_id = effective_payload["assigned_nurse_id"]
+
+        # 6. Record BedAssignment
+        assignment = BedAssignment(
+            bed_id=target_bed_id,
+            encounter_id=enc_id,
+            patient_id=pat_id,
+            assigned_by=actor_id,
+            is_manual_override=(action == "MODIFY"),
+            status="RESERVED"
+        )
+        self.db.add(assignment)
+
+        # 7. Record Bed AuditLog entry
+        bed_audit = AuditLog(
+            tenant_id=tenant_id,
+            entity_type="bed",
+            entity_id=target_bed_id,
+            field_changed="status",
+            old_value=old_bed_status,
+            new_value="RESERVED",
+            changed_by=actor_id,
+            change_reason=f"Approved AI Recommendation ({item.action_type}) by {actor_role} ({action})"
+        )
+        self.db.add(bed_audit)
+
+        logger.info(
+            f"EXECUTED APPROVED RESOURCE MUTATION: Bed {target_bed_id} RESERVED for Encounter {enc_id} "
+            f"via Approval {item.id} ({action}) by {actor_id}"
+        )
+        return target_bed_id
 
     async def approve_action(self, approval_id: str, actor_id: str, actor_role: str, tenant_id: Optional[str] = None) -> ApprovalItem:
         """Convenience method to approve a proposed action."""

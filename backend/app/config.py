@@ -62,34 +62,44 @@ class Settings(BaseSettings):
         if not self.ALLOWED_ORIGINS:
             return ["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"]
         origins = [orig.strip() for orig in self.ALLOWED_ORIGINS.split(",") if orig.strip()]
+        # Disallow wildcard origin when credentials are enabled
+        origins = [o for o in origins if o != "*"]
         return origins if origins else ["http://localhost:3000", "http://localhost:5173"]
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
-        """Enforces that production deployments do NOT run with default development secrets."""
+        """Enforces that production deployments do NOT run with default development secrets or unsafe configurations."""
         if self.ENVIRONMENT.lower() in ["production", "prod"]:
             insecure_secrets = {
                 DEFAULT_INSECURE_DEV_SECRET,
+                "hospital-super-secret-key-change-in-production-2026",
+                "hospital-super-secret-production-key-2026",
+                "hospital-enterprise-super-secret-jwt-key-2026-secure-random",
                 "secret",
                 "changeme",
                 "password",
                 "admin",
                 ""
             }
-            if not self.SECRET_KEY or self.SECRET_KEY in insecure_secrets or len(self.SECRET_KEY) < 16:
+            if not self.SECRET_KEY or self.SECRET_KEY in insecure_secrets or len(self.SECRET_KEY) < 32:
                 raise ValueError(
                     "CRITICAL SECURITY CONFIGURATION ERROR: Production environment detected, but SECRET_KEY "
-                    "is insecure, default, or under 16 characters. Set a strong, unique SECRET_KEY environment variable."
+                    "is insecure, default, or under 32 characters (256-bit minimum). Set a strong, unique SECRET_KEY environment variable."
                 )
-            if not self.JWT_SECRET or self.JWT_SECRET in insecure_secrets or len(self.JWT_SECRET) < 16:
+            if not self.JWT_SECRET or self.JWT_SECRET in insecure_secrets or len(self.JWT_SECRET) < 32:
                 raise ValueError(
                     "CRITICAL SECURITY CONFIGURATION ERROR: Production environment detected, but JWT_SECRET "
-                    "is insecure, default, or under 16 characters. Set a strong, unique JWT_SECRET environment variable."
+                    "is insecure, default, or under 32 characters (256-bit minimum). Set a strong, unique JWT_SECRET environment variable."
                 )
             if not (self.DATABASE_URL.startswith("postgresql") or self.DATABASE_URL.startswith("postgres")):
                 raise ValueError(
                     "CRITICAL DATABASE CONFIGURATION ERROR: Production environment detected, but DATABASE_URL "
                     "is not configured for PostgreSQL. Production requires PostgreSQL (postgresql+asyncpg://...)."
+                )
+            if self.ALLOWED_ORIGINS and "*" in [o.strip() for o in self.ALLOWED_ORIGINS.split(",")]:
+                raise ValueError(
+                    "CRITICAL CORS CONFIGURATION ERROR: Production environment detected, but ALLOWED_ORIGINS "
+                    "contains wildcard '*'. Wildcard origins with credentials enabled are forbidden."
                 )
         return self
 

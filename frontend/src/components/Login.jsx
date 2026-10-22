@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
+import { Icon } from './common/Icon.jsx';
 
 function Login() {
   const { login, error: authError } = useAuth();
@@ -28,43 +29,69 @@ function Login() {
   const displayError = localError || authError;
 
   return (
-    <div className="login-container">
-      <div className="login-card">
-        <h1>Hospital Command Center</h1>
-        <p className="login-subtitle">Staff Authentication</p>
+    <div className="login-screen">
+      <div className="login-panel">
+        <div className="login-brand">
+          <div className="brand-logo large">
+            <Icon name="shield" size={32} color="#ffffff" />
+          </div>
+          <h2>CITY HOSPITAL</h2>
+          <p className="login-subtitle">Multi-Agent Resource Management & Clinical Triage</p>
+        </div>
 
         {displayError && (
-          <div className="error-message">{displayError}</div>
+          <div className="alert-banner alert-error" role="alert">
+            <Icon name="alert-triangle" size={16} />
+            <span>{displayError}</span>
+          </div>
         )}
 
         <form onSubmit={handleSubmit} className="login-form">
-          <label>
-            Staff ID
+          <div className="form-group">
+            <label htmlFor="login_staff_id">Staff Identifier</label>
             <input
+              id="login_staff_id"
               type="text"
+              className="form-input"
               value={staffId}
               onChange={(e) => setStaffId(e.target.value)}
-              placeholder="DOC-001"
+              placeholder="e.g. ADM-001 or DOC-001"
               disabled={submitting}
               autoFocus
+              required
             />
-          </label>
+          </div>
 
-          <label>
-            Password
+          <div className="form-group">
+            <label htmlFor="login_password">Access Password</label>
             <input
+              id="login_password"
               type="password"
+              className="form-input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password"
+              placeholder="Enter institutional password"
               disabled={submitting}
+              required
             />
-          </label>
+          </div>
 
-          <button type="submit" disabled={submitting} className="login-button">
-            {submitting ? 'Signing in...' : 'Sign In'}
+          <button
+            type="submit"
+            className="btn btn-primary btn-block"
+            disabled={submitting}
+          >
+            {submitting ? "Authenticating Session..." : "Sign In to Operations Portal"}
           </button>
         </form>
+
+        <div className="login-credentials-hint">
+          <span>Institutional Test Accounts:</span>
+          <div className="account-tag-row">
+            <code>Doctor: DOC-001 / hospital@123</code>
+            <code>Admin: ADM-001 / hospital@123</code>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,15 +1,19 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || '/api/v1';
 
 export function getToken() {
-  return sessionStorage.getItem('auth_token');
+  return typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('auth_token') : null;
 }
 
 export function setToken(token) {
-  sessionStorage.setItem('auth_token', token);
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.setItem('auth_token', token);
+  }
 }
 
 export function clearToken() {
-  sessionStorage.removeItem('auth_token');
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem('auth_token');
+  }
 }
 
 async function handleResponse(res) {
@@ -73,3 +77,8 @@ export async function apiGetRaw(fullUrl) {
   });
   return handleResponse(res);
 }
+
+// Aliases for convenience
+export const get = apiGet;
+export const post = apiPost;
+export const patch = apiPatch;
