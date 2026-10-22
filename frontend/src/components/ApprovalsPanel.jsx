@@ -3,6 +3,7 @@ import { listPendingApprovals, reviewApproval } from '../api/approvals.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useEvents } from '../context/EventContext.jsx';
 import { useDemo } from '../context/DemoContext.jsx';
+import { listBeds } from '../api/beds.js';
 import { Icon } from './common/Icon.jsx';
 
 function ApprovalsPanel() {
@@ -18,6 +19,9 @@ function ApprovalsPanel() {
   const [actionLoading, setActionLoading] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectingId, setRejectingId] = useState(null);
+  const [modifyingId, setModifyingId] = useState(null);
+  const [availableBeds, setAvailableBeds] = useState([]);
+  const [selectedBedId, setSelectedBedId] = useState('');
 
   const canReview = user && ['ADMINISTRATOR', 'DOCTOR'].includes(user.role);
 
@@ -71,12 +75,13 @@ function ApprovalsPanel() {
     };
   }, [debouncedFetch]);
 
-  const handleReview = async (approvalId, action, reason) => {
+  const handleReview = async (approvalId, action, reason, modification) => {
     setActionLoading(approvalId);
     try {
       if (!demoMode) {
         const body = { action };
         if (action === 'REJECT' && reason) body.rejection_reason = reason;
+        if (action === 'MODIFY') body.modification = modification;
         await reviewApproval(approvalId, body);
       }
 
@@ -99,11 +104,31 @@ function ApprovalsPanel() {
       window.dispatchEvent(new CustomEvent("bed:updated"));
       window.dispatchEvent(new CustomEvent("patient:updated"));
       setRejectingId(null);
+      setModifyingId(null);
+      setSelectedBedId('');
       setRejectReason('');
     } catch (err) {
       setError(err.message);
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const beginModification = async (item) => {
+    setError(null);
+    try {
+      const beds = await listBeds(undefined, 'AVAILABLE');
+      const alternatives = item.alternatives || [];
+      const supportedBedIds = new Set([
+        item.proposed_action?.target_bed_id,
+        ...alternatives.map((candidate) => candidate.target_bed_id),
+      ].filter(Boolean));
+      const eligibleBeds = beds.filter((bed) => supportedBedIds.has(bed.id));
+      setAvailableBeds(eligibleBeds);
+      setSelectedBedId(eligibleBeds[0]?.id || '');
+      setModifyingId(item.id);
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -219,11 +244,34 @@ function ApprovalsPanel() {
                     <p className="clinical-rationale-text">
                       <strong>Clinical Rationale:</strong> {item.reasoning}
                     </p>
+                    {item.alternatives?.length > 0 && (
+                      <div className="clinical-rationale-text">
+                        <strong>Reviewed alternatives:</strong>{' '}
+                        {item.alternatives.map((candidate) => `${candidate.target_bed_id || 'No bed'} (${candidate.objective_score ?? 'unscored'}): ${candidate.description || candidate.plan_type}`).join(' · ')}
+                      </div>
+                    )}
+                    {item.proposed_action?.decision_context && (
+                      <details className="clinical-rationale-text">
+                        <summary>Recommendation inputs</summary>
+                        <pre>{JSON.stringify(item.proposed_action.decision_context, null, 2)}</pre>
+                      </details>
+                    )}
                   </div>
 
                   {canReview ? (
                     <div className="approval-actions-clean">
-                      {rejectingId === item.id ? (
+                      {modifyingId === item.id ? (
+                        <div className="reject-inline-block">
+                          <label htmlFor={`bed-choice-${item.id}`}>Choose an available recommended bed</label>
+                          <select id={`bed-choice-${item.id}`} className="form-input" value={selectedBedId} onChange={(event) => setSelectedBedId(event.target.value)}>
+                            {availableBeds.map((bed) => <option key={bed.id} value={bed.id}>{bed.id} · {bed.bed_type} · {bed.department_id}</option>)}
+                          </select>
+                          <button type="button" className="btn btn-primary btn-sm" onClick={() => handleReview(item.id, 'MODIFY', null, { target_bed_id: selectedBedId })} disabled={actionLoading === item.id || !selectedBedId}>
+                            {actionLoading === item.id ? 'Saving...' : 'Confirm Modified Allocation'}
+                          </button>
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setModifyingId(null); setSelectedBedId(''); }}>Cancel</button>
+                        </div>
+                      ) : rejectingId === item.id ? (
                         <div className="reject-inline-block">
                           <input
                             type="text"
@@ -251,6 +299,7 @@ function ApprovalsPanel() {
                         </div>
                       ) : (
                         <div className="actions-button-row">
+                          <button type="button" className="btn btn-outline btn-sm" onClick={() => beginModification(item)} disabled={actionLoading === item.id}>Modify Allocation</button>
                           <button
                             type="button"
                             className="btn btn-outline btn-sm"

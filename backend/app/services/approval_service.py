@@ -128,6 +128,10 @@ class ApprovalService:
         action_clean = action.upper()
         if action_clean not in ["APPROVE", "MODIFY", "REJECT"]:
             raise HTTPException(status_code=400, detail="Action must be APPROVE, MODIFY, or REJECT")
+        if action_clean == "MODIFY" and not modification:
+            raise HTTPException(status_code=400, detail="Modification payload is required")
+        if action_clean == "REJECT" and not (rejection_reason or "").strip():
+            raise HTTPException(status_code=400, detail="A rejection reason is required")
 
         try:
             # Atomic state transition from PENDING -> action_clean (guarantees single-winner concurrency across PostgreSQL and SQLite)
@@ -315,11 +319,10 @@ class ApprovalService:
         # 3. Check bed compatibility if specified (e.g. ICU requirement)
         required_bed_type = effective_payload.get("bed_type")
         if required_bed_type and str(required_bed_type).upper() == "ICU" and bed.bed_type not in ["ICU", "CARDIAC_MONITOR"]:
-            if action != "MODIFY":
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Bed {target_bed_id} type '{bed.bed_type}' is incompatible with required ICU level of care"
-                )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bed {target_bed_id} type '{bed.bed_type}' is incompatible with required ICU level of care"
+            )
 
         # 4. Apply State Mutation on Bed with atomic CAS check
         old_bed_status = bed.status
