@@ -255,7 +255,9 @@ class ConstraintOptimizer:
         Direction: Higher is better (optimal utilization without bottleneck saturation).
         """
         # If explicit occupancy rate is available
-        occupancy = candidate.get("occupancy_rate")
+        occupancy = candidate.get("department_occupancy_rate")
+        if occupancy is None:
+            occupancy = candidate.get("occupancy_rate")
         if occupancy is None:
             occupancy = bed.get("occupancy_rate")
 
@@ -370,6 +372,14 @@ class ConstraintOptimizer:
         # -------------------------------------------------------------
         # 1. Unresolved Bed Shortage for Primary Plan
         if plan_type in ["PRIMARY_RECOMMENDED", "NEGOTIATED_OPTIMAL"]:
+            if not candidate.get("target_bed_id"):
+                hard_pass = False
+                total_penalties += self.config.penalty_hard_constraint_violation
+                reasons.append("Hard constraint failure: no compatible available bed")
+            if triage.get("requires_ventilator") and not bed.get("ventilator_available", True):
+                hard_pass = False
+                total_penalties += self.config.penalty_hard_constraint_violation
+                reasons.append("Hard constraint failure: required ventilator unavailable")
             has_bed_conflict = any(c.get("type") == "BED_CAPACITY_CONFLICT" for c in conflicts)
             if has_bed_conflict and negotiation_status != "RESOLVED":
                 hard_pass = False

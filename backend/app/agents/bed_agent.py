@@ -97,6 +97,24 @@ class BedManagerAgent(BaseAgent):
         )
         occupied_beds = occupied_res.scalar() or 0
         occupancy_rate = round(occupied_beds / total_beds, 2)
+        department_counts = await self.db.execute(
+            select(Bed.department_id, func.count(Bed.id))
+            .join(Department, Bed.department_id == Department.id)
+            .where(Department.tenant_id == tenant_id)
+            .group_by(Bed.department_id)
+        )
+        capacity_by_department = dict(department_counts.all())
+        department_occupancy_rows = await self.db.execute(
+            select(Bed.department_id, func.count(Bed.id))
+            .join(Department, Bed.department_id == Department.id)
+            .where(Department.tenant_id == tenant_id, Bed.status.in_(["OCCUPIED", "RESERVED"]))
+            .group_by(Bed.department_id)
+        )
+        occupied_by_department = dict(department_occupancy_rows.all())
+        occupancy_by_department = {
+            department_id: round(occupied_by_department.get(department_id, 0) / max(count, 1), 2)
+            for department_id, count in capacity_by_department.items()
+        }
 
         # Match optimal candidate beds
         matching_beds = [b for b in available_beds if b.bed_type in target_bed_types]
@@ -152,6 +170,11 @@ class BedManagerAgent(BaseAgent):
             "alternative_beds": alt_beds,
             "occupancy_rate": occupancy_rate,
             "feasibility": feasibility,
+            "capacity_by_department": capacity_by_department,
+            "occupancy_by_department": occupancy_by_department,
+            "available_compatible_beds": len(matching_beds),
+            "ventilator_required": bool(triage_output.get("requires_ventilator")),
+            "ventilator_available": equipment_ready,
             "rationale": rationale,
             "timestamp": utc_now_iso()
         }
