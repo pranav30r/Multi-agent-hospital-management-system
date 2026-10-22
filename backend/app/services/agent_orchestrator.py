@@ -135,6 +135,29 @@ class MultiAgentOrchestratorService:
 
         return graph_state.get("coordinator_output", {})
 
+    async def coordinate_hospital_workflow(
+        self,
+        encounter_id: str,
+        tenant_id: str = "HOSP-DEFAULT",
+        trigger_reason: Optional[str] = None,
+        force_recalculate: bool = False,
+        actor_id: str = "SYSTEM",
+        correlation_id: Optional[str] = None
+    ):
+        """
+        Executes the unified 10-step Hospital Workflow Coordinator with typed state.
+        """
+        from app.services.hospital_workflow_coordinator import HospitalWorkflowCoordinator
+        coordinator = HospitalWorkflowCoordinator(self.db)
+        return await coordinator.coordinate_workflow(
+            encounter_id=encounter_id,
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+            force_recalculate=force_recalculate,
+            trigger_reason=trigger_reason
+        )
+
     async def recommend_clinical_workflow(
         self,
         encounter_id: str,

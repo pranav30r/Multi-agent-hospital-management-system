@@ -24,6 +24,9 @@ export async function releaseBed(bedId) {
   return apiPost(`/beds/${bedId}/release`);
 }
 
-export async function updateBedStatus(bedId, status, reason = "Status manually updated via Bed Management") {
-  return apiPatch(`/beds/${bedId}/status`, { status, reason });
+export async function updateBedStatus(bedId, status, reason = "Status manually updated via Bed Management", patientId = null, encounterId = null) {
+  const body = { status, reason };
+  if (patientId) body.patient_id = patientId;
+  if (encounterId) body.encounter_id = encounterId;
+  return apiPatch(`/beds/${bedId}/status`, body);
 }

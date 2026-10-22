@@ -99,16 +99,34 @@ function BedGrid() {
   }, [lastEvent, debouncedFetch]);
 
   useEffect(() => {
-    const handler = () => debouncedFetch();
-    window.addEventListener("websocket:reconnected", handler);
-    window.addEventListener("app:refresh-authoritative", handler);
-    window.addEventListener("app:poll-refresh", handler);
-    window.addEventListener("bed:updated", handler);
+    const handleBedUpdated = (e) => {
+      if (e?.detail?.bedId) {
+        const { bedId, status, patientId, encounterId } = e.detail;
+        setBeds((prev) =>
+          prev.map((b) =>
+            b.id === bedId
+              ? {
+                  ...b,
+                  status: status || "OCCUPIED",
+                  current_patient_id: patientId !== undefined ? patientId : b.current_patient_id,
+                  current_encounter_id: encounterId !== undefined ? encounterId : b.current_encounter_id,
+                }
+              : b
+          )
+        );
+      }
+      debouncedFetch();
+    };
+
+    window.addEventListener("websocket:reconnected", debouncedFetch);
+    window.addEventListener("app:refresh-authoritative", debouncedFetch);
+    window.addEventListener("app:poll-refresh", debouncedFetch);
+    window.addEventListener("bed:updated", handleBedUpdated);
     return () => {
-      window.removeEventListener("websocket:reconnected", handler);
-      window.removeEventListener("app:refresh-authoritative", handler);
-      window.removeEventListener("app:poll-refresh", handler);
-      window.removeEventListener("bed:updated", handler);
+      window.removeEventListener("websocket:reconnected", debouncedFetch);
+      window.removeEventListener("app:refresh-authoritative", debouncedFetch);
+      window.removeEventListener("app:poll-refresh", debouncedFetch);
+      window.removeEventListener("bed:updated", handleBedUpdated);
     };
   }, [debouncedFetch]);
 
@@ -136,19 +154,14 @@ function BedGrid() {
     try {
       const enc = activeEncounters.find((x) => x.id === selectedEncounterId);
       const patientId = enc?.patient_id || "PAT-0001";
-      try {
-        await bookBedManual({
-          bed_id: selectedBed.id,
-          encounter_id: selectedEncounterId,
-          patient_id: patientId,
-          reason: bookingReason,
-        });
-      } catch {
-        // Fallback to direct status change
-        await updateBedStatus(selectedBed.id, "OCCUPIED", bookingReason);
-      }
+      await bookBedManual({
+        bed_id: selectedBed.id,
+        encounter_id: selectedEncounterId,
+        patient_id: patientId,
+        reason: bookingReason,
+      });
       setActionSuccess(`Bed ${selectedBed.id} successfully assigned to ${enc?.patient_name || patientId}!`);
-      window.dispatchEvent(new CustomEvent("bed:updated", { detail: { bedId: selectedBed.id, status: "OCCUPIED" } }));
+      window.dispatchEvent(new CustomEvent("bed:updated", { detail: { bedId: selectedBed.id, status: "RESERVED" } }));
       window.dispatchEvent(new CustomEvent("patient:updated"));
       await fetchData();
       setTimeout(handleCloseModal, 900);

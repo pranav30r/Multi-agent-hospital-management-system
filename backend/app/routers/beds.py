@@ -137,6 +137,8 @@ async def release_bed(
 class BedStatusUpdateRequest(BaseModel):
     status: str = Field(..., examples=["AVAILABLE", "OCCUPIED", "RESERVED", "MAINTENANCE", "CLEANING", "BLOCKED"])
     reason: Optional[str] = Field(default="Status manually updated by clinician")
+    patient_id: Optional[str] = None
+    encounter_id: Optional[str] = None
 
 
 @router.patch("/beds/{bed_id}/status", response_model=BedResponse)
@@ -158,6 +160,8 @@ async def update_bed_status(
         actor_id=current_staff.id,
         actor_role=current_staff.role,
         tenant_id=current_staff.tenant_id,
-        reason=req.reason
+        reason=req.reason,
+        patient_id=req.patient_id,
+        encounter_id=req.encounter_id
     )
 

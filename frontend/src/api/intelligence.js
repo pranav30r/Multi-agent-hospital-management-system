@@ -15,3 +15,7 @@ export async function getMessages(encounterId) {
 export async function getOptimizationRun(encounterId) {
   return apiGet(`/clinical-intelligence/${encounterId}/optimization-run`);
 }
+
+export async function coordinateHospitalWorkflow(encounterId, data) {
+  return apiPost(`/clinical-intelligence/${encounterId}/workflow-coordinate`, data || {});
+}

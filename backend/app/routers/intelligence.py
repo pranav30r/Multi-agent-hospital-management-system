@@ -14,6 +14,7 @@ from app.schemas.intelligence import (
     AgentMessageResponse,
     OptimizationRunResponse
 )
+from app.schemas.hospital_workflow import HospitalWorkflowState
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/clinical-intelligence", tags=["Clinical Intelligence & Decision Support"])
@@ -105,6 +106,33 @@ async def get_doctor_clinical_summary(
     """Retrieve structured doctor-facing clinical pre-consultation summary."""
     service = ClinicalIntelligenceService(db)
     return await service.get_summary(encounter_id)
+
+
+@router.post("/{encounter_id}/workflow-coordinate", response_model=HospitalWorkflowState, status_code=status.HTTP_200_OK)
+async def coordinate_hospital_workflow(
+    encounter_id: str,
+    req: Optional[IntelligenceExecutionRequest] = None,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE", "NURSE"])),
+    tenant_id: str = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Executes the unified hospital multi-agent workflow coordinator.
+    Invokes Triage -> Patient Flow -> Bed Matching -> Workforce -> Escalation in defined order,
+    passes typed structured state, handles failures/conflicts, and enforces human-in-the-loop review.
+    """
+    from app.services.hospital_workflow_coordinator import HospitalWorkflowCoordinator
+    coordinator = HospitalWorkflowCoordinator(db)
+    trigger_reason = req.trigger_reason if req else None
+    force_recalc = req.force_recalculate if req else False
+
+    return await coordinator.coordinate_workflow(
+        encounter_id=encounter_id,
+        tenant_id=tenant_id,
+        actor_id=current_staff.id,
+        force_recalculate=force_recalc,
+        trigger_reason=trigger_reason
+    )
 
 
 @router.post("/{encounter_id}/decide", response_model=IntelligenceDecisionResponse, status_code=status.HTTP_200_OK)

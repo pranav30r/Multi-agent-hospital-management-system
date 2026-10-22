@@ -1,10 +1,13 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { listActiveEncounters } from '../api/patients.js';
-import { listBeds, updateBedStatus } from '../api/beds.js';
+import { listBeds, updateBedStatus, bookBedManual, confirmPatientInBed } from '../api/beds.js';
 import { useEvents } from '../context/EventContext.jsx';
 import { useDemo } from '../context/DemoContext.jsx';
 import { Icon } from './common/Icon.jsx';
 import { Drawer } from './common/Components.jsx';
+import { getAiRecommendedBed } from '../utils/aiAllocation.js';
+
+export { getAiRecommendedBed };
 
 function EmergencyQueue({ onAssignBed }) {
   const { lastEvent } = useEvents();
@@ -18,8 +21,11 @@ function EmergencyQueue({ onAssignBed }) {
   const [bedsList, setBedsList] = useState([]);
   const [selectedBedToAssign, setSelectedBedToAssign] = useState("");
   const [assignLoading, setAssignLoading] = useState(false);
+  const [rowLoadingId, setRowLoadingId] = useState(null);
   const [assignSuccess, setAssignSuccess] = useState(null);
   const [assignError, setAssignError] = useState(null);
+  const [bannerNotice, setBannerNotice] = useState(null);
+  const [showManualOverride, setShowManualOverride] = useState(false);
   const [allocationReason, setAllocationReason] = useState("Immediate triage admission");
   const [currentTime, setCurrentTime] = useState(0);
 
@@ -40,49 +46,162 @@ function EmergencyQueue({ onAssignBed }) {
     }
   }, [demoMode, demoData]);
 
+  const fetchBeds = useCallback(async () => {
+    try {
+      const beds = await listBeds();
+      if (beds && beds.length > 0) {
+        setBedsList(beds);
+        return;
+      }
+    } catch {
+      // Fallback beds
+    }
+    setBedsList((prev) => (prev && prev.length > 0 ? prev : [
+      { id: "BED-ER-01", department_id: "DEP-ER", bed_type: "EMERGENCY_BAY", status: "AVAILABLE" },
+      { id: "BED-ER-02", department_id: "DEP-ER", bed_type: "EMERGENCY_BAY", status: "AVAILABLE" },
+      { id: "BED-ICU-01", department_id: "DEP-ICU", bed_type: "ICU_VENTILATOR", status: "AVAILABLE" },
+      { id: "BED-ICU-02", department_id: "DEP-ICU", bed_type: "ICU_VENTILATOR", status: "AVAILABLE" },
+      { id: "BED-CAR-01", department_id: "DEP-CARD", bed_type: "CARDIAC_MONITOR", status: "AVAILABLE" },
+      { id: "BED-GEN-01", department_id: "DEP-GEN", bed_type: "STANDARD_INPATIENT", status: "AVAILABLE" },
+    ]));
+  }, []);
+
   const debounceTimerRef = useRef(null);
   const debouncedFetch = useCallback(() => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       fetchEncounters();
+      fetchBeds();
     }, 200);
-  }, [fetchEncounters]);
+  }, [fetchEncounters, fetchBeds]);
 
   useEffect(() => {
     fetchEncounters();
+    fetchBeds();
     setCurrentTime(Date.now());
     const timer = setInterval(() => setCurrentTime(Date.now()), 30000);
     return () => {
       clearInterval(timer);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [fetchEncounters]);
+  }, [fetchEncounters, fetchBeds]);
+
   useEffect(() => {
     if (selectedEncounter) {
       setAssignSuccess(null);
       setAssignError(null);
-      listBeds()
-        .then((beds) => {
-          setBedsList(beds || []);
-          const avail = (beds || []).filter((b) => b.status === "AVAILABLE");
-          if (avail.length > 0) {
-            setSelectedBedToAssign(avail[0].id);
-          } else if (beds && beds.length > 0) {
-            setSelectedBedToAssign(beds[0].id);
-          }
-        })
-        .catch(() => {
-          const fallback = [
-            { id: "BED-ER-01", department_id: "DEP-ER", bed_type: "EMERGENCY_BAY", status: "AVAILABLE" },
-            { id: "BED-ICU-01", department_id: "DEP-ICU", bed_type: "ICU_VENTILATOR", status: "AVAILABLE" },
-            { id: "BED-CAR-01", department_id: "DEP-CARD", bed_type: "CARDIAC_MONITOR", status: "AVAILABLE" },
-            { id: "BED-GEN-01", department_id: "DEP-GEN", bed_type: "STANDARD_INPATIENT", status: "AVAILABLE" },
-          ];
-          setBedsList(fallback);
-          setSelectedBedToAssign("BED-ER-01");
-        });
+      setShowManualOverride(false);
+      const avail = (bedsList || []).filter((b) => b.status === "AVAILABLE");
+      if (avail.length > 0) {
+        setSelectedBedToAssign(avail[0].id);
+      } else if (bedsList && bedsList.length > 0) {
+        setSelectedBedToAssign(bedsList[0].id);
+      }
     }
-  }, [selectedEncounter]);
+  }, [selectedEncounter, bedsList]);
+
+  const handleApproveAiBed = async (enc, proposedBedId) => {
+    if (!enc || !proposedBedId) return;
+    setAssignLoading(true);
+    setRowLoadingId(enc.id);
+    setAssignError(null);
+    setAssignSuccess(null);
+    try {
+      try {
+        await bookBedManual({
+          bed_id: proposedBedId,
+          encounter_id: enc.id,
+          patient_id: enc.patient_id,
+          reason: `Clinician approved AI allocation (${enc.ai_recommendation || 'Emergency Triage'})`,
+        });
+        try {
+          await confirmPatientInBed(proposedBedId);
+        } catch {
+          await updateBedStatus(
+            proposedBedId,
+            "OCCUPIED",
+            `Allocated to ${enc.patient_name || enc.patient_id} (AI Recommendation Approved)`,
+            enc.patient_id,
+            enc.id
+          );
+        }
+      } catch {
+        // Direct occupancy update
+        await updateBedStatus(
+          proposedBedId,
+          "OCCUPIED",
+          `Allocated to ${enc.patient_name || enc.patient_id} (AI Recommendation Approved)`,
+          enc.patient_id,
+          enc.id
+        );
+      }
+
+      setEncounters((prev) =>
+        prev.map((e) =>
+          e.id === enc.id || e.patient_id === enc.patient_id
+            ? { ...e, assigned_bed_id: proposedBedId }
+            : e
+        )
+      );
+
+      setBedsList((prev) =>
+        prev.map((b) =>
+          b.id === proposedBedId
+            ? {
+                ...b,
+                status: "OCCUPIED",
+                current_patient_id: enc.patient_id,
+                current_encounter_id: enc.id,
+              }
+            : b
+        )
+      );
+
+      if (selectedEncounter && (selectedEncounter.id === enc.id || selectedEncounter.patient_id === enc.patient_id)) {
+        setSelectedEncounter((prev) => ({ ...prev, assigned_bed_id: proposedBedId }));
+      }
+
+      const successMsg = `Bed ${proposedBedId} allocated to ${enc.patient_name || enc.patient_id}`;
+      setAssignSuccess(`✓ ${successMsg}`);
+      setBannerNotice({
+        type: "success",
+        message: `✓ AI Recommendation Approved: ${successMsg}`,
+      });
+
+      window.dispatchEvent(
+        new CustomEvent("bed:updated", {
+          detail: {
+            bedId: proposedBedId,
+            status: "OCCUPIED",
+            patientId: enc.patient_id,
+            encounterId: enc.id,
+            patientName: enc.patient_name,
+          },
+        })
+      );
+      window.dispatchEvent(new CustomEvent("patient:updated"));
+      setTimeout(() => setBannerNotice(null), 4000);
+      setTimeout(() => setAssignSuccess(null), 3500);
+    } catch (err) {
+      const errMsg = err.message || "Failed to approve AI bed allocation";
+      setAssignError(errMsg);
+      setBannerNotice({
+        type: "error",
+        message: `Allocation failed: ${errMsg}`,
+      });
+      setTimeout(() => setBannerNotice(null), 5000);
+    } finally {
+      setAssignLoading(false);
+      setRowLoadingId(null);
+    }
+  };
+
+  const handleRejectAiBed = (enc) => {
+    setSelectedEncounter(enc);
+    setShowManualOverride(true);
+    setAssignError(`AI recommendation declined for ${enc.patient_name || enc.patient_id}. Select an alternative bed below.`);
+    if (onAssignBed) onAssignBed(enc);
+  };
 
   const handleAssignBed = async (e) => {
     if (e) e.preventDefault();
@@ -95,7 +214,9 @@ function EmergencyQueue({ onAssignBed }) {
         await updateBedStatus(
           selectedBedToAssign,
           "OCCUPIED",
-          `Allocated to ${selectedEncounter.patient_name || selectedEncounter.patient_id} (${allocationReason})`
+          `Allocated to ${selectedEncounter.patient_name || selectedEncounter.patient_id} (${allocationReason})`,
+          selectedEncounter.patient_id,
+          selectedEncounter.id
         );
       } catch (err) {
         console.warn("API update bed note:", err);
@@ -108,13 +229,37 @@ function EmergencyQueue({ onAssignBed }) {
             : enc
         )
       );
+
+      setBedsList((prev) =>
+        prev.map((b) =>
+          b.id === selectedBedToAssign
+            ? {
+                ...b,
+                status: "OCCUPIED",
+                current_patient_id: selectedEncounter.patient_id,
+                current_encounter_id: selectedEncounter.id,
+              }
+            : b
+        )
+      );
+
       setSelectedEncounter((prev) => ({
         ...prev,
         assigned_bed_id: selectedBedToAssign,
       }));
 
       setAssignSuccess(`Bed ${selectedBedToAssign} successfully assigned!`);
-      window.dispatchEvent(new CustomEvent("bed:updated", { detail: { bedId: selectedBedToAssign, status: "OCCUPIED" } }));
+      window.dispatchEvent(
+        new CustomEvent("bed:updated", {
+          detail: {
+            bedId: selectedBedToAssign,
+            status: "OCCUPIED",
+            patientId: selectedEncounter.patient_id,
+            encounterId: selectedEncounter.id,
+            patientName: selectedEncounter.patient_name,
+          },
+        })
+      );
       window.dispatchEvent(new CustomEvent("patient:updated"));
       setTimeout(() => setAssignSuccess(null), 3500);
     } catch (err) {
@@ -136,9 +281,21 @@ function EmergencyQueue({ onAssignBed }) {
             : enc
         )
       );
+      setBedsList((prev) =>
+        prev.map((b) =>
+          b.id === bedId
+            ? { ...b, status: "AVAILABLE", current_patient_id: null, current_encounter_id: null }
+            : b
+        )
+      );
       setSelectedEncounter((prev) => ({ ...prev, assigned_bed_id: null }));
       setAssignSuccess(`Bed ${bedId} released to available pool.`);
-      window.dispatchEvent(new CustomEvent("bed:updated", { detail: { bedId, status: "AVAILABLE" } }));
+      window.dispatchEvent(
+        new CustomEvent("bed:updated", {
+          detail: { bedId, status: "AVAILABLE", patientId: null },
+        })
+      );
+      window.dispatchEvent(new CustomEvent("patient:updated"));
       setTimeout(() => setAssignSuccess(null), 3000);
     } catch (err) {
       setAssignError(err.message || "Failed to release bed");
@@ -174,6 +331,27 @@ function EmergencyQueue({ onAssignBed }) {
     const matchesSearch = hay.includes(search.toLowerCase().trim());
     return matchesEsi && matchesSearch;
   });
+
+  // Distribute unique available beds across waiting triage encounters (zero duplication)
+  const proposedBedsMap = useMemo(() => {
+    const claimed = new Set();
+    encounters.forEach((e) => {
+      if (e.assigned_bed_id) claimed.add(e.assigned_bed_id);
+    });
+
+    const mapping = {};
+    filtered.forEach((enc) => {
+      if (enc.assigned_bed_id) {
+        mapping[enc.id] = enc.assigned_bed_id;
+        claimed.add(enc.assigned_bed_id);
+      } else {
+        const proposed = getAiRecommendedBed(enc, bedsList, claimed);
+        mapping[enc.id] = proposed;
+        claimed.add(proposed);
+      }
+    });
+    return mapping;
+  }, [filtered, encounters, bedsList]);
 
   const getEsiBadgeClass = (score) => {
     switch (Number(score)) {
@@ -234,6 +412,20 @@ function EmergencyQueue({ onAssignBed }) {
         </div>
       </div>
 
+      {bannerNotice && (
+        <div className={`alert-banner alert-${bannerNotice.type}`} role="status" style={{ marginBottom: "16px" }}>
+          <span>{bannerNotice.message}</span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setBannerNotice(null)}
+            style={{ marginLeft: "auto", padding: "0 6px" }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="loading-state-card">
           <div className="spinner-border" />
@@ -277,6 +469,7 @@ function EmergencyQueue({ onAssignBed }) {
                 const bp = enc.bp || (vitals.bp_systolic ? `${vitals.bp_systolic}/${vitals.bp_diastolic}` : '—');
                 const createdTime = enc.created_at ? new Date(enc.created_at).getTime() : 0;
                 const waitMins = enc.wait_time_minutes || (createdTime > 0 && currentTime > 0 ? Math.max(1, Math.floor((currentTime - createdTime) / 60000)) : 12);
+                const proposedBed = proposedBedsMap[enc.id] || getAiRecommendedBed(enc, bedsList);
 
                 return (
                   <tr
@@ -316,30 +509,47 @@ function EmergencyQueue({ onAssignBed }) {
                     <td>
                       <div className="ai-rec-tag">
                         <Icon name="sparkles" size={13} className="text-primary" />
-                        <span>{enc.ai_recommendation || 'Assign to Emergency Bay'}</span>
+                        <div className="ai-rec-cell">
+                          <span className="ai-rec-text">{enc.ai_recommendation || 'Assign to Emergency Bay'}</span>
+                          {!enc.assigned_bed_id && (
+                            <span className="ai-target-tag">
+                              AI Suggests: <strong>{proposedBed}</strong>
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="text-right" onClick={(e) => e.stopPropagation()}>
                       {enc.assigned_bed_id ? (
                         <button
                           type="button"
-                          className="btn btn-secondary btn-sm"
+                          className="btn btn-secondary btn-sm assigned-bed-btn"
                           onClick={() => setSelectedEncounter(enc)}
                           title={`Assigned Bed: ${enc.assigned_bed_id}`}
                         >
                           🛏 {enc.assigned_bed_id.replace("BED-", "")}
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          onClick={() => {
-                            setSelectedEncounter(enc);
-                            if (onAssignBed) onAssignBed(enc);
-                          }}
-                        >
-                          Assign Bed
-                        </button>
+                        <div className="ai-decision-cell">
+                          <button
+                            type="button"
+                            className="btn btn-success btn-sm ai-btn-yes"
+                            disabled={assignLoading && rowLoadingId === enc.id}
+                            onClick={() => handleApproveAiBed(enc, proposedBed)}
+                            title={`Confirm AI Bed Allocation (${proposedBed})`}
+                          >
+                            {assignLoading && rowLoadingId === enc.id ? '...' : '✓ Yes'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm ai-btn-no"
+                            disabled={assignLoading && rowLoadingId === enc.id}
+                            onClick={() => handleRejectAiBed(enc)}
+                            title="Decline AI Bed / Choose Manually"
+                          >
+                            ✕ No
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -357,7 +567,9 @@ function EmergencyQueue({ onAssignBed }) {
         title={`Patient Encounter: ${selectedEncounter?.patient_id}`}
         subtitle={selectedEncounter?.patient_name || "Emergency Department Intake"}
       >
-        {selectedEncounter && (
+        {selectedEncounter && (() => {
+          const selectedProposedBed = proposedBedsMap[selectedEncounter.id] || getAiRecommendedBed(selectedEncounter, bedsList);
+          return (
           <div className="patient-drawer-content">
             <div className="drawer-section">
               <span className="drawer-label">TRIAGE ASSESSMENT</span>
@@ -404,6 +616,35 @@ function EmergencyQueue({ onAssignBed }) {
                 <p className="ai-support-body">
                   {selectedEncounter.ai_recommendation || "Patient symptoms warrant immediate telemetry monitoring and formal assessment by the attending ER physician."}
                 </p>
+
+                {!selectedEncounter.assigned_bed_id && (
+                  <div className="ai-drawer-proposal-banner">
+                    <div className="ai-drawer-proposal-info">
+                      <span className="ai-proposal-label">AI Recommended Bed:</span>
+                      <span className="ai-proposal-value">🛏 {selectedProposedBed}</span>
+                    </div>
+                    <div className="ai-drawer-proposal-actions">
+                      <button
+                        type="button"
+                        className="btn btn-success btn-sm"
+                        disabled={assignLoading}
+                        onClick={() => handleApproveAiBed(selectedEncounter, selectedProposedBed)}
+                        style={{ flex: 1, justifyContent: "center" }}
+                      >
+                        {assignLoading ? "Assigning..." : `✓ Yes, Approve Bed ${selectedProposedBed}`}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        onClick={() => setShowManualOverride(true)}
+                        style={{ flex: 1, justifyContent: "center" }}
+                      >
+                        ✕ No, Change Bed
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="ai-disclaimer-subtle">
                   Operational proposal only. Does not replace physician diagnosis.
                 </div>
@@ -444,7 +685,7 @@ function EmergencyQueue({ onAssignBed }) {
                     {assignLoading ? "Vacating..." : "Vacate / Discharge Bed"}
                   </button>
                 </div>
-              ) : (
+              ) : showManualOverride ? (
                 <form onSubmit={handleAssignBed} className="bed-assignment-form">
                   <div className="form-group" style={{ marginBottom: "12px" }}>
                     <label htmlFor="drawer_bed_select" style={{ fontSize: "13px", fontWeight: "600", display: "block", marginBottom: "6px" }}>Select Available Bed</label>
@@ -477,19 +718,40 @@ function EmergencyQueue({ onAssignBed }) {
                     />
                   </div>
 
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    style={{ width: "100%", justifyContent: "center" }}
-                    disabled={assignLoading || !selectedBedToAssign}
-                  >
-                    {assignLoading ? "Allocating Bed..." : `Assign ${selectedBedToAssign || "Bed"} to Patient`}
-                  </button>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      style={{ flex: 1, justifyContent: "center" }}
+                      disabled={assignLoading || !selectedBedToAssign}
+                    >
+                      {assignLoading ? "Allocating Bed..." : `Assign ${selectedBedToAssign || "Bed"} Manually`}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={() => setShowManualOverride(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </form>
+              ) : (
+                <div style={{ textAlign: "center", padding: "10px 0" }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    style={{ width: "100%", justifyContent: "center" }}
+                    onClick={() => setShowManualOverride(true)}
+                  >
+                    Need an override? Choose Different Bed Manually
+                  </button>
+                </div>
               )}
             </div>
           </div>
-        )}
+          );
+        })()}
       </Drawer>
     </div>
   );

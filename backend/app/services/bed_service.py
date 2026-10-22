@@ -340,7 +340,9 @@ class BedService:
         actor_id: str,
         actor_role: str,
         tenant_id: Optional[str] = None,
-        reason: Optional[str] = None
+        reason: Optional[str] = None,
+        patient_id: Optional[str] = None,
+        encounter_id: Optional[str] = None
     ) -> Bed:
         """
         Directly update bed status (AVAILABLE, OCCUPIED, RESERVED, MAINTENANCE, CLEANING, BLOCKED)
@@ -365,6 +367,10 @@ class BedService:
 
         try:
             bed.status = status
+            if patient_id:
+                bed.current_patient_id = patient_id
+            if encounter_id:
+                bed.current_encounter_id = encounter_id
             if status == "AVAILABLE":
                 bed.current_patient_id = None
                 bed.current_encounter_id = None
@@ -410,7 +416,9 @@ class BedService:
                 "department_id": bed.department_id,
                 "previous_status": old_status,
                 "status": status,
-                "reason": reason
+                "reason": reason,
+                "patient_id": bed.current_patient_id,
+                "encounter_id": bed.current_encounter_id
             }
         }, tenant_id=tenant_id or "HOSP-DEFAULT")
 

@@ -882,10 +882,120 @@ html, body {
 
 .ai-rec-tag {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 8px;
   font-size: 13.5px;
   color: var(--text-secondary);
+}
+
+.ai-rec-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ai-rec-text {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+.ai-target-tag {
+  font-size: 11.5px;
+  color: var(--color-primary);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-target-tag strong {
+  font-family: var(--font-mono);
+  background: rgba(37, 99, 235, 0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--color-primary-dark, #1d4ed8);
+}
+
+.ai-decision-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.btn-success {
+  background: #16a34a;
+  color: #ffffff;
+  border-color: #15803d;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.ai-btn-yes {
+  padding: 0 10px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(22, 163, 74, 0.2);
+}
+
+.ai-btn-no {
+  padding: 0 10px;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.ai-btn-no:hover:not(:disabled) {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #f87171;
+}
+
+.assigned-bed-btn {
+  font-weight: 600;
+  background: #f0fdf4;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.ai-drawer-proposal-banner {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-drawer-proposal-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ai-proposal-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: #1e40af;
+}
+
+.ai-proposal-value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 14px;
+  color: #1e3a8a;
+  background: #dbeafe;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.ai-drawer-proposal-actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* ─── Bed Capacity Matrix (Min 220px wide, 16-20px padding) ──────────────── */
