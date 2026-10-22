@@ -30,6 +30,7 @@ class ApprovalItemResponse(BaseModel):
     action_type: str
     risk_level: str
     proposed_action: dict
+    alternatives: Optional[list] = None
     reasoning: str
     status: str
     reviewed_by: Optional[str] = None

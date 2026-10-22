@@ -337,6 +337,16 @@ class CoordinatorAgent(BaseAgent):
         await self.db.flush()
 
         # 6. Persist AgentDecision Entity
+        proposed_action = {
+            **proposed_action,
+            "decision_context": {
+                "triage": triage_output,
+                "bed_resources": bed_output,
+                "staffing": staff_output,
+                "emergency": emergency_output,
+                "optimization_run_id": opt_run.id,
+            },
+        }
         decision = AgentDecision(
             agent_id="MultiAgentCoordinator",
             encounter_id=encounter.id,
