@@ -1,0 +1,7 @@
+# robots.txt for Hospital Operations Command Center
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /ws/
+
+Sitemap: https://hospital.local/sitemap.xml

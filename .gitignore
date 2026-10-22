@@ -48,3 +48,7 @@ frontend/dist/
 
 # Byte-compiled
 *.pyc
+
+# Local scratch and temp simulation files
+scratch/
+backend/surge_results.json

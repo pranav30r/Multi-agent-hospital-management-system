@@ -52,6 +52,26 @@ def event_loop():
     loop.close()
 
 
+@pytest.fixture(autouse=True)
+def reset_app_rate_limiter():
+    """Reset the InMemoryRateLimiter sliding window history between tests so full test suite does not hit 429."""
+    if not getattr(app, "middleware_stack", None):
+        app.middleware_stack = app.build_middleware_stack()
+    cur = app.middleware_stack
+    while cur:
+        if type(cur).__name__ == "InMemoryRateLimiter":
+            cur.request_history.clear()
+            break
+        cur = getattr(cur, "app", None)
+    yield
+    cur = getattr(app, "middleware_stack", None)
+    while cur:
+        if type(cur).__name__ == "InMemoryRateLimiter":
+            cur.request_history.clear()
+            break
+        cur = getattr(cur, "app", None)
+
+
 @pytest_asyncio.fixture(scope="function")
 async def test_db():
     """Initializes schema and seeds fresh synthetic data from database seed files for each test run."""

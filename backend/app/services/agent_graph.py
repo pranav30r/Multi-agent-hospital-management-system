@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from langgraph.graph import StateGraph, START, END
 
 from app.models.patient import Patient, Encounter
-from app.services.agent_orchestrator import (
+from app.agents import (
     TriageAgent,
     BedManagerAgent,
     BedManagementAgent,
@@ -488,11 +488,10 @@ class HospitalLangGraphOrchestrator:
         workflow.add_node("negotiator", self.negotiation_node)
         workflow.add_node("coordinator", self.coordinator_node)
 
-        # Build initial proposal flow graph edges
+        # Build initial proposal flow graph edges sequentially to guarantee AsyncSession safety
         workflow.add_edge(START, "triage")
         workflow.add_edge("triage", "bed")
-        workflow.add_edge("triage", "emergency")
-        workflow.add_edge("bed", "staff")
+        workflow.add_edge("bed", "emergency")
         workflow.add_edge("emergency", "staff")
         workflow.add_edge("staff", "patient_coordinator")
         workflow.add_edge("patient_coordinator", "conflict_detector")
@@ -587,8 +586,7 @@ def create_hospital_state_graph():
 
     workflow.add_edge(START, "triage")
     workflow.add_edge("triage", "bed")
-    workflow.add_edge("triage", "emergency")
-    workflow.add_edge("bed", "staff")
+    workflow.add_edge("bed", "emergency")
     workflow.add_edge("emergency", "staff")
     workflow.add_edge("staff", "patient_coordinator")
     workflow.add_edge("patient_coordinator", "conflict_detector")

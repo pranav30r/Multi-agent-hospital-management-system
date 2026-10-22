@@ -332,3 +332,87 @@ class BedService:
         }, tenant_id=tenant_id or "HOSP-DEFAULT")
 
         return bed
+
+    async def update_bed_status(
+        self,
+        bed_id: str,
+        status: str,
+        actor_id: str,
+        actor_role: str,
+        tenant_id: Optional[str] = None,
+        reason: Optional[str] = None
+    ) -> Bed:
+        """
+        Directly update bed status (AVAILABLE, OCCUPIED, RESERVED, MAINTENANCE, CLEANING, BLOCKED)
+        with pessimistic locking and audit trail.
+        """
+        valid_statuses = ["AVAILABLE", "OCCUPIED", "RESERVED", "MAINTENANCE", "CLEANING", "BLOCKED"]
+        status = status.upper()
+        if status not in valid_statuses:
+            raise HTTPException(status_code=400, detail=f"Invalid status '{status}'. Must be one of {valid_statuses}")
+
+        bed_query = select(Bed).where(Bed.id == bed_id)
+        if tenant_id:
+            bed_query = bed_query.join(Department, Bed.department_id == Department.id).where(Department.tenant_id == tenant_id)
+        res_bed = await self.db.execute(bed_query.with_for_update())
+        bed = res_bed.scalars().first()
+        if not bed:
+            raise HTTPException(status_code=404, detail="Bed not found")
+
+        old_status = bed.status
+        if old_status == status:
+            return bed
+
+        try:
+            bed.status = status
+            if status == "AVAILABLE":
+                bed.current_patient_id = None
+                bed.current_encounter_id = None
+                bed.last_cleaned_at = utc_now()
+                assignment_query = select(BedAssignment).where(
+                    BedAssignment.bed_id == bed_id,
+                    BedAssignment.status.in_(["RESERVED", "OCCUPIED"])
+                ).order_by(BedAssignment.reserved_at.desc())
+                res_assign = await self.db.execute(assignment_query)
+                assignment = res_assign.scalars().first()
+                if assignment:
+                    assignment.status = "RELEASED"
+                    assignment.released_at = utc_now()
+
+            audit = AuditLog(
+                tenant_id=tenant_id or "HOSP-DEFAULT",
+                entity_type="bed",
+                entity_id=bed_id,
+                field_changed="status",
+                old_value=old_status,
+                new_value=status,
+                changed_by=actor_id,
+                change_reason=reason or f"Bed status manually changed from {old_status} to {status} by {actor_role} {actor_id}"
+            )
+            self.db.add(audit)
+            await self.db.commit()
+            await self.db.refresh(bed)
+        except Exception:
+            await self.db.rollback()
+            raise
+
+        logger.info(f"Bed Status Updated: {bed_id} transitioned from {old_status} to {status} by {actor_id}")
+
+        event_name = "BED_RELEASED" if status == "AVAILABLE" else "BED_OCCUPIED" if status == "OCCUPIED" else "BED_RESERVED" if status == "RESERVED" else "BED_UPDATED"
+        from app.services.events import event_bus
+        await event_bus.publish({
+            "event_type": event_name,
+            "tenant_id": tenant_id or "HOSP-DEFAULT",
+            "source": "bed_service",
+            "payload": {
+                "bed_id": bed.id,
+                "bed_type": bed.bed_type,
+                "department_id": bed.department_id,
+                "previous_status": old_status,
+                "status": status,
+                "reason": reason
+            }
+        }, tenant_id=tenant_id or "HOSP-DEFAULT")
+
+        return bed
+

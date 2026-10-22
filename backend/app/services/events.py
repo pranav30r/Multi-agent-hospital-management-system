@@ -43,11 +43,32 @@ class RedisEventBus:
 
     def __init__(self, manager=None):
         self.manager = manager or redis_manager
-        self._local_subscriber = None
+        self._local_subscribers: list = []
+
+    @property
+    def _local_subscriber(self):
+        return self._local_subscribers[0] if self._local_subscribers else None
+
+    @_local_subscriber.setter
+    def _local_subscriber(self, callback):
+        if callback is not None:
+            if callback not in self._local_subscribers:
+                self._local_subscribers.append(callback)
+        else:
+            self._local_subscribers.clear()
 
     def register_local_subscriber(self, callback):
-        """Registers a fallback in-process callback (e.g. WebSocket manager) when Redis is unavailable."""
-        self._local_subscriber = callback
+        """Registers an in-process callback (e.g. WebSocket manager, background listener) when Redis is unavailable."""
+        if callback and callback not in self._local_subscribers:
+            self._local_subscribers.append(callback)
+
+    async def _dispatch_local_subscribers(self, tenant_id: str, event_dict: dict):
+        """Fans out an event to all registered in-process fallback subscribers."""
+        for subscriber in list(self._local_subscribers):
+            try:
+                await subscriber(tenant_id, event_dict)
+            except Exception as loc_err:
+                logger.warning(f"Local event dispatch failed for subscriber {subscriber}: {loc_err}")
 
     async def publish(
         self,
@@ -87,11 +108,7 @@ class RedisEventBus:
             client = await self.manager.get_client()
             if not client:
                 logger.debug(f"Redis client not available. Falling back to local dispatch for {event_obj.event_type} on {channel}")
-                if self._local_subscriber:
-                    try:
-                        await self._local_subscriber(event_obj.tenant_id, event_obj.model_dump())
-                    except Exception as loc_err:
-                        logger.warning(f"Local event dispatch failed: {loc_err}")
+                await self._dispatch_local_subscribers(event_obj.tenant_id, event_obj.model_dump())
                 return False
 
             # 3. Publish payload as JSON
@@ -105,11 +122,8 @@ class RedisEventBus:
 
         except Exception as exc:
             logger.warning(f"Failed to publish event to Redis Pub/Sub ({exc}). Continuing gracefully.")
-            if self._local_subscriber and 'event_obj' in locals():
-                try:
-                    await self._local_subscriber(event_obj.tenant_id, event_obj.model_dump())
-                except Exception as loc_err:
-                    logger.warning(f"Local event dispatch failed: {loc_err}")
+            if 'event_obj' in locals():
+                await self._dispatch_local_subscribers(event_obj.tenant_id, event_obj.model_dump())
             return False
 
     async def get_pubsub_for_tenant(self, tenant_id: str):

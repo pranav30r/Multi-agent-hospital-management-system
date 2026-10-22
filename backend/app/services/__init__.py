@@ -17,6 +17,23 @@ from app.services.clinical_document_service import ClinicalDocumentService
 from app.services.investigation_service import InvestigationService
 from app.services.clinical_priority_service import ClinicalPriorityService
 from app.services.intelligence_engine_service import IntelligenceEngineService
+from app.services.agent_event_listener import (
+    AgentEventListener,
+    EventListenerConfig,
+    get_event_listener,
+)
+from app.services.risk_engine import (
+    RiskEngine,
+    RiskPolicyConfig,
+    RiskEvaluationResult,
+    RiskTier,
+    GovernanceActionType,
+)
+from app.services.constraint_optimizer import (
+    ConstraintOptimizer,
+    ConstraintOptimizerConfig,
+    OptimizerResult,
+)
 
 __all__ = [
     "BedService",
@@ -37,5 +54,16 @@ __all__ = [
     "ClinicalDocumentService",
     "InvestigationService",
     "ClinicalPriorityService",
-    "IntelligenceEngineService"
+    "IntelligenceEngineService",
+    "AgentEventListener",
+    "EventListenerConfig",
+    "get_event_listener",
+    "RiskEngine",
+    "RiskPolicyConfig",
+    "RiskEvaluationResult",
+    "RiskTier",
+    "GovernanceActionType",
+    "ConstraintOptimizer",
+    "ConstraintOptimizerConfig",
+    "OptimizerResult",
 ]

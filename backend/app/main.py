@@ -14,6 +14,7 @@ logger = logging.getLogger("hospital_system")
 
 from app.core.redis import redis_manager
 from app.routers.events import ws_manager
+from app.services.agent_event_listener import get_event_listener
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -22,8 +23,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database connection established.")
     await redis_manager.initialize()
+    event_listener = get_event_listener()
+    await event_listener.start()
     yield
     logger.info("Shutting down Hospital Command Center Backend...")
+    await event_listener.stop()
     await ws_manager.close_all()
     await redis_manager.close()
 
