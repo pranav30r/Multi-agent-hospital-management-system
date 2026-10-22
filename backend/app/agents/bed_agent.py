@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.patient import Patient, Encounter
 from app.models.bed import Bed
 from app.models.department import Department
+from app.models.equipment import Equipment
 from app.utils.datetime_utils import utc_now_iso
 from app.agents.base import BaseAgent
 
@@ -100,14 +101,21 @@ class BedManagerAgent(BaseAgent):
         # Match optimal candidate beds
         matching_beds = [b for b in available_beds if b.bed_type in target_bed_types]
         if requires_isolation:
-            iso_beds = [b for b in matching_beds if b.is_isolation]
-            if iso_beds:
-                matching_beds = iso_beds
+            matching_beds = [b for b in matching_beds if b.is_isolation]
 
         if requires_telemetry:
-            telem_beds = [b for b in matching_beds if b.has_telemetry or b.bed_type == "ICU"]
-            if telem_beds:
-                matching_beds = telem_beds
+            matching_beds = [b for b in matching_beds if b.has_telemetry or b.bed_type == "ICU"]
+
+        equipment_ready = True
+        if triage_output.get("requires_ventilator"):
+            equipment_result = await self.db.execute(
+                select(func.count(Equipment.id))
+                .join(Department, Equipment.department_id == Department.id)
+                .where(Department.tenant_id == tenant_id, Equipment.resource_type == "VENTILATOR", Equipment.status == "AVAILABLE")
+            )
+            equipment_ready = (equipment_result.scalar() or 0) > 0
+            if not equipment_ready:
+                matching_beds = []
 
         if matching_beds:
             primary_bed = matching_beds[0]
@@ -121,17 +129,12 @@ class BedManagerAgent(BaseAgent):
             rec_dept_id = primary_bed.department_id
             rec_bed_type = primary_bed.bed_type
         elif available_beds:
-            # Fallback bed from available general inventory
-            fallback_bed = available_beds[0]
-            alt_beds = [b.id for b in available_beds[1:3]]
+            alt_beds = []
             feasibility = "CONSTRAINED"
-            rationale = (
-                f"No direct {care_level} beds available. Fallback bed {fallback_bed.id} ({fallback_bed.bed_type}) "
-                f"in department {fallback_bed.department_id} proposed under capacity pressure."
-            )
-            rec_bed_id = fallback_bed.id
-            rec_dept_id = fallback_bed.department_id
-            rec_bed_type = fallback_bed.bed_type
+            rationale = "No bed satisfies all requested clinical constraints; no fallback bed is recommended. " + ("No available ventilator is present." if not equipment_ready else "Review capacity or clinical requirements.")
+            rec_bed_id = None
+            rec_dept_id = None
+            rec_bed_type = None
         else:
             feasibility = "UNAVAILABLE"
             rationale = f"Critical bed shortage: zero available beds across all hospital units (Occupancy: 100%). Surge holding area required."

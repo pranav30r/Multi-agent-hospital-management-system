@@ -49,12 +49,12 @@ class StaffSchedulerAgent(BaseAgent):
         res = await self.db.execute(staff_query)
         all_staff: List[Staff] = res.scalars().all()
 
-        doctors = [s for s in all_staff if s.role == "DOCTOR"]
-        nurses = [s for s in all_staff if s.role in ["NURSE", "CHARGE_NURSE"]]
+        doctors = [s for s in all_staff if s.role == "DOCTOR" and s.current_workload < s.max_workload]
+        nurses = [s for s in all_staff if s.role in ["NURSE", "CHARGE_NURSE"] and s.current_workload < s.max_workload]
 
         # Prioritize staff in target department, then hospital-wide
-        dept_doctors = [d for d in doctors if d.department_id == dept_id] or doctors
-        dept_nurses = [n for n in nurses if n.department_id == dept_id] or nurses
+        dept_doctors = [d for d in doctors if d.department_id == dept_id]
+        dept_nurses = [n for n in nurses if n.department_id == dept_id]
 
         # Select least loaded doctor and nurse
         assigned_doc = min(dept_doctors, key=lambda d: d.current_workload) if dept_doctors else None
