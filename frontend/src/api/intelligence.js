@@ -24,3 +24,6 @@ export async function getWorkflowRecommendations(encounterIds) {
   if (!encounterIds?.length) return [];
   return apiPost('/clinical-intelligence/workflow-recommendations', encounterIds);
 }
+export async function getWorkflowState(encounterId) {
+  return apiGet(`/clinical-intelligence/${encounterId}/workflow-state`);
+}

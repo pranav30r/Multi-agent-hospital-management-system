@@ -85,13 +85,6 @@ function Login() {
           </button>
         </form>
 
-        <div className="login-credentials-hint">
-          <span>Institutional Test Accounts:</span>
-          <div className="account-tag-row">
-            <code>Doctor: DOC-001 / hospital@123</code>
-            <code>Admin: ADM-001 / hospital@123</code>
-          </div>
-        </div>
       </div>
     </div>
   );

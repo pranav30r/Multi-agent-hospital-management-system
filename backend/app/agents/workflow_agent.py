@@ -149,7 +149,8 @@ class ClinicalWorkflowAgent(BaseAgent):
             cardiac_reasons = []
             cardiac_keywords = [
                 "chest pain", "angina", "myocardial", "crushing chest", "substernal",
-                "cardiac pain", "pressure in chest", "radiation to left arm", "radiation to jaw"
+                "cardiac pain", "pressure in chest", "radiation to left arm", "radiation to jaw",
+                "heart attack", "heart failure", "cardiac arrest", "coronary", "acute coronary"
             ]
             if any(kw in chief_complaint for kw in cardiac_keywords):
                 is_cardiac = True

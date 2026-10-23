@@ -509,12 +509,13 @@ class HospitalWorkflowCoordinator:
         cand_alternatives = []
         if resource_match_result.alternative_beds:
             for alt_id in resource_match_result.alternative_beds[:3]:
-                cand_alternatives.append({
-                    "alternative_type": "SECONDARY_BED_OPTION",
-                    "bed_id": alt_id,
-                    "department_id": resource_match_result.recommended_department_id,
-                    "note": "Pre-qualified alternative available bed"
-                })
+                if alt_id and str(alt_id).strip().lower() not in ["none", "null"]:
+                    cand_alternatives.append({
+                        "alternative_type": "SECONDARY_BED_OPTION",
+                        "bed_id": alt_id,
+                        "department_id": resource_match_result.recommended_department_id or patient_flow_result.target_department,
+                        "note": "Pre-qualified alternative available bed"
+                    })
         if resource_match_result.feasibility == "UNAVAILABLE":
             cand_alternatives.append({
                 "alternative_type": "SURGE_HOLDING",
@@ -528,8 +529,8 @@ class HospitalWorkflowCoordinator:
             tenant_id=enc_tenant,
             triage_priority=f"ESI-{triage_result.esi_level} ({triage_result.priority_level})",
             triage_rationale=triage_result.rationale,
-            recommended_department=patient_flow_result.target_department,
-            patient_flow_action=f"Route to {patient_flow_result.target_department} ({patient_flow_result.recommended_protocol or 'Standard Admission'})",
+            recommended_department=resource_match_result.recommended_department_id or patient_flow_result.target_department,
+            patient_flow_action=f"Route to {resource_match_result.recommended_department_id or patient_flow_result.target_department} ({patient_flow_result.recommended_protocol or 'Standard Admission'})",
             recommended_bed_id=resource_match_result.recommended_bed_id,
             required_resources=["Telemetry Monitor"] if triage_result.requires_telemetry else [],
             workforce_constraints=workforce_assessment.shortages_detected or ([] if workforce_assessment.workforce_data_available else ["Roster data unavailable"]),
@@ -680,6 +681,70 @@ class HospitalWorkflowCoordinator:
         now_iso = utc_now_iso()
         proposed = existing_dec.proposed_action or {}
         req_approval = bool(appr_item)
+        target_bed = proposed.get("target_bed_id") or proposed.get("bed_id")
+        if target_bed and str(target_bed).strip().lower() in ["none", "null"]:
+            target_bed = None
+
+        target_dept = proposed.get("target_department_id") or proposed.get("target_department") or proposed.get("department_id")
+        if not target_dept or str(target_dept).strip().lower() in ["none", "null"]:
+            care_level = proposed.get("care_level") or proposed.get("bed_type")
+            if care_level in ["ICU", "ICU_VENTILATOR"] or (encounter.esi_level and encounter.esi_level <= 2):
+                target_dept = "DEP-ICU"
+            elif care_level == "EMERGENCY":
+                target_dept = "DEP-ER"
+            elif care_level == "GENERAL":
+                target_dept = "DEP-WA"
+            else:
+                target_dept = "DEP-ER"
+
+        doc_id = proposed.get("assigned_doctor_id")
+        nurse_id = proposed.get("assigned_nurse_id")
+
+        clean_alternatives = []
+        for alt in (existing_dec.alternatives or []):
+            if isinstance(alt, dict):
+                bed_id = alt.get("target_bed_id") or alt.get("bed_id")
+                if bed_id and str(bed_id).strip().lower() in ["none", "null"]:
+                    bed_id = None
+                clean_alt = dict(alt)
+                clean_alt["target_bed_id"] = bed_id
+                clean_alt["bed_id"] = bed_id
+                if bed_id or alt.get("plan_type") in ["CONTINGENCY_SURGE", "SURGE_HOLDING"] or alt.get("alternative_type") == "SURGE_HOLDING":
+                    clean_alternatives.append(clean_alt)
+            elif isinstance(alt, str) and alt.strip().lower() not in ["none", "null"]:
+                clean_alternatives.append({"bed_id": alt, "target_bed_id": alt})
+
+        flow_result = PatientFlowResult(
+            agent_id="patient_coordinator_agent",
+            current_stage=encounter.patient_status or "TRIAGE",
+            target_department=target_dept,
+            rationale=f"Clinical pathway directs patient to {target_dept} based on ESI-{encounter.esi_level or 3} presentation.",
+            timestamp=now_iso
+        )
+
+        res_match = ResourceMatchResult(
+            agent_id="bed_manager_agent",
+            recommended_bed_id=target_bed,
+            recommended_department_id=target_dept,
+            feasibility="FEASIBLE" if target_bed else "UNAVAILABLE",
+            rationale=f"Matched bed {target_bed} in {target_dept}" if target_bed else f"No compatible bed currently available in {target_dept}",
+            timestamp=now_iso
+        )
+
+        workforce = WorkforceAssessment(
+            agent_id="staff_scheduler_agent",
+            assigned_doctor_id=doc_id,
+            assigned_nurse_id=nurse_id,
+            feasibility="FEASIBLE" if (doc_id or nurse_id) else "UNAVAILABLE",
+            rationale=(
+                f"Balanced team assigned: Doctor {doc_id}, Nurse {nurse_id}."
+                if target_bed and (doc_id or nurse_id)
+                else f"Clinical team identified: Doctor {doc_id or 'None'}, Nurse {nurse_id or 'None'}. Bed station unavailable; team on standby."
+                if (doc_id or nurse_id)
+                else "No staff assigned"
+            ),
+            timestamp=now_iso
+        ) if (doc_id or nurse_id) else None
 
         rec = ConsolidatedRecommendation(
             encounter_id=encounter.id,
@@ -687,15 +752,15 @@ class HospitalWorkflowCoordinator:
             tenant_id=tenant_id,
             triage_priority=f"ESI-{encounter.esi_level or 3}",
             triage_rationale=existing_dec.reasoning or "Existing cached clinical decision",
-            recommended_department=proposed.get("target_department") or "DEP-ER",
-            patient_flow_action=f"Route to {proposed.get('target_department') or 'DEP-ER'}",
-            recommended_bed_id=proposed.get("bed_id"),
+            recommended_department=target_dept,
+            patient_flow_action=f"Route to {target_dept}",
+            recommended_bed_id=target_bed,
             required_resources=[],
             workforce_constraints=[],
             escalation_level=existing_dec.risk_level or "LOW",
             missing_information=[],
             warnings=[],
-            candidate_alternatives=existing_dec.alternatives or [],
+            candidate_alternatives=clean_alternatives,
             human_approval_required=req_approval,
             approval_item_id=appr_item.id if appr_item else None,
             workflow_status="APPROVAL_PENDING" if req_approval else "RECOMMENDATION_READY",
@@ -719,11 +784,14 @@ class HospitalWorkflowCoordinator:
                 priority_level="MODERATE",
                 severity=existing_dec.risk_level or "LOW",
                 score=0.0,
-                recommended_care_level="GENERAL",
+                recommended_care_level="ICU" if target_dept == "DEP-ICU" else "GENERAL",
                 clinical_urgency="STANDARD",
                 rationale=existing_dec.reasoning or "Cached decision",
                 timestamp=now_iso
             ),
+            patient_flow_result=flow_result,
+            resource_match_result=res_match,
+            workforce_assessment=workforce,
             recommendation=rec,
             approval_status="PENDING" if req_approval else "NOT_REQUIRED",
             state_version=1,

@@ -278,7 +278,21 @@ class ApprovalService:
             effective_payload.update(modification)
 
         target_bed_id = effective_payload.get("target_bed_id") or effective_payload.get("bed_id")
+        if target_bed_id and str(target_bed_id).strip().lower() in ["none", "null"]:
+            target_bed_id = None
         enc_id = effective_payload.get("encounter_id") or (getattr(decision, "encounter_id", None) if decision else None)
+
+        # Disallow approving a bed allocation when no eligible bed exists
+        is_bed_allocation = (
+            item.action_type in ["BED_ALLOCATION", "ICU_BED_ALLOCATION_RECOMMENDATION", "ALLOCATE_BED", "EMERGENCY_ESCALATION_TRANSFER"]
+            or effective_payload.get("action") == "ALLOCATE_BED"
+            or bool(effective_payload.get("bed_type"))
+        )
+        if is_bed_allocation and not target_bed_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot approve bed allocation: no eligible target bed is available or specified"
+            )
 
         # If no bed or encounter specified, no physical bed allocation to perform
         if not target_bed_id or not enc_id:

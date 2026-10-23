@@ -100,20 +100,33 @@ class StaffSchedulerAgent(BaseAgent):
         avg_nurse_load = sum(n.current_workload for n in receiving_nurses) / len(receiving_nurses) if receiving_nurses else 0.0
 
         # Assess feasibility
+        if avg_nurse_load and avg_nurse_load > 0:
+            ratio_str = f"Avg Nurse Load: {avg_nurse_load:.1f} pts/nurse."
+        else:
+            ratio_str = "Active Nurse Load: 0 assigned patients (full capacity available)."
+
         if assigned_doc and assigned_nurse:
+            coverage_scope = "receiving department" if dept_doctors and dept_nurses else "hospital-wide fallback"
             if assigned_nurse.current_workload >= assigned_nurse.max_workload:
                 feasibility = "WARNING_OVERLOAD"
                 rationale = (
                     f"Staff assignment feasible with load pressure: Doctor {assigned_doc.id} (load {assigned_doc.current_workload}/{assigned_doc.max_workload}), "
-                    f"Nurse {assigned_nurse.id} at capacity ({assigned_nurse.current_workload}/{assigned_nurse.max_workload})."
+                    f"Nurse {assigned_nurse.id} at capacity ({assigned_nurse.current_workload}/{assigned_nurse.max_workload}). "
+                    f"{ratio_str}"
+                )
+            elif not bed_output.get("recommended_bed_id"):
+                feasibility = "FEASIBLE"
+                rationale = (
+                    f"Candidate clinical team identified: Doctor {assigned_doc.id}, Nurse {assigned_nurse.id}. "
+                    f"Coverage: {coverage_scope}. "
+                    f"Physical bed station is currently unavailable pending bed clearance. {ratio_str}"
                 )
             else:
                 feasibility = "FEASIBLE"
-                coverage_scope = "receiving department" if dept_doctors and dept_nurses else "hospital-wide fallback"
                 rationale = (
                     f"Balanced team assigned: Doctor {assigned_doc.id} (load {assigned_doc.current_workload}/{assigned_doc.max_workload}), "
                     f"Nurse {assigned_nurse.id} (load {assigned_nurse.current_workload}/{assigned_nurse.max_workload}). "
-                    f"Coverage: {coverage_scope}. Avg Nurse Ratio: {avg_nurse_load:.1f}:1."
+                    f"Coverage: {coverage_scope}. {ratio_str}"
                 )
         else:
             feasibility = "CRITICAL_SHORTAGE"

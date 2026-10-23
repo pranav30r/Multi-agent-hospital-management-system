@@ -6,7 +6,11 @@ from app.utils.datetime_utils import utc_now_iso
 logger = logging.getLogger(__name__)
 
 # Keywords for high-risk clinical symptom pattern matching
-CHEST_KEYWORDS = ["chest pain", "chest pressure", "chest tightness", "angina", "cardiac"]
+CHEST_KEYWORDS = [
+    "chest pain", "chest pressure", "chest tightness", "angina", "cardiac",
+    "heart attack", "heart failure", "cardiac arrest", "myocardial infarction",
+    "stemi", "nstemi", "coronary", "acute coronary"
+]
 RESPIRATORY_KEYWORDS = ["shortness of breath", "difficulty breathing", "breathing difficulty", "breathing problem", "respiratory distress", "dyspnea", "wheezing", "cannot breathe", "gasping", "breathlessness"]
 NEURO_KEYWORDS = ["sudden weakness", "facial drooping", "slurred speech", "numbness", "paralysis", "seizure", "convulsion", "unresponsive", "unconscious", "not conscious", "fainting", "syncope"]
 BLEEDING_KEYWORDS = ["severe bleeding", "heavy blood loss", "heavy bleeding", "blood loss", "coughing blood", "hemoptysis", "vomiting blood", "hematemesis", "active hemorrhage", "blood in stool"]

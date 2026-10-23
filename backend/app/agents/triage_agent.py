@@ -56,6 +56,8 @@ class TriageAgent(BaseAgent):
         # Derive ESI level from encounter or priority_level
         if has_critical_flag:
             esi_level = 1
+        elif any(flag.get("code") == "RF_CHEST_COMPLAINT" for flag in red_flags):
+            esi_level = min(encounter.esi_level or 2, 2)
         elif encounter.esi_level:
             esi_level = encounter.esi_level
         elif priority_level == "CRITICAL":

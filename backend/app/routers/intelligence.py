@@ -70,6 +70,16 @@ async def get_workflow_recommendations(
         approval_status = approval.status if approval else "NOT_REQUIRED"
         bed_id = proposed.get("target_bed_id") or proposed.get("bed_id") or bed_data.get("recommended_bed_id")
         department_id = proposed.get("target_department_id") or bed_data.get("recommended_department_id")
+        if not department_id:
+            triage_care = (context.get("triage") or {}).get("recommended_care_level")
+            dept_map = {
+                "ICU": "DEP-ICU",
+                "EMERGENCY": "DEP-ER",
+                "OBSERVATION": "DEP-ER",
+                "WARD": "DEP-WA",
+                "GENERAL": "DEP-WA",
+            }
+            department_id = dept_map.get(triage_care) or ("DEP-ICU" if (context.get("triage") or {}).get("requires_telemetry") else None)
         if approval_status == "PENDING":
             workflow_status = "APPROVAL_PENDING"
         elif approval_status in {"REJECT", "REJECTED"} or decision.status in {"REJECT", "REJECTED"}:
@@ -187,6 +197,27 @@ async def get_doctor_clinical_summary(
     """Retrieve structured doctor-facing clinical pre-consultation summary."""
     service = ClinicalIntelligenceService(db)
     return await service.get_summary(encounter_id)
+
+
+@router.get("/{encounter_id}/workflow-state", response_model=HospitalWorkflowState, status_code=status.HTTP_200_OK)
+async def get_hospital_workflow_state(
+    encounter_id: str,
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE", "NURSE"])),
+    tenant_id: str = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieve authoritative multi-agent workflow state for an encounter.
+    Idempotent read that returns active cached state without forcing recalculation.
+    """
+    from app.services.hospital_workflow_coordinator import HospitalWorkflowCoordinator
+    coordinator = HospitalWorkflowCoordinator(db)
+    return await coordinator.coordinate_workflow(
+        encounter_id=encounter_id,
+        tenant_id=tenant_id,
+        actor_id=current_staff.id,
+        force_recalculate=False
+    )
 
 
 @router.post("/{encounter_id}/workflow-coordinate", response_model=HospitalWorkflowState, status_code=status.HTTP_200_OK)

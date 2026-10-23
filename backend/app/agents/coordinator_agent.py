@@ -105,14 +105,25 @@ class CoordinatorAgent(BaseAgent):
         bed_counter = revised.get("bed_counter_proposal")
         staff_revised = revised.get("staff_revised_proposal")
 
+        req_care_level = triage_output.get("recommended_care_level", "GENERAL")
+        default_dept = (
+            "DEP-ICU" if req_care_level == "ICU"
+            else "DEP-ER" if req_care_level == "EMERGENCY"
+            else "DEP-WA" if req_care_level == "GENERAL"
+            else "DEP-OPD"
+        )
         target_bed_p0 = bed_output.get("recommended_bed_id")
-        target_dept_p0 = bed_output.get("recommended_department_id")
+        target_dept_p0 = (
+            bed_output.get("recommended_department_id")
+            or (coordinator_output.get("target_department") if isinstance(coordinator_output, dict) else None)
+            or default_dept
+        )
         assigned_doc_p0 = staff_output.get("assigned_doctor_id")
         assigned_nurse_p0 = staff_output.get("assigned_nurse_id")
 
         if bed_counter and bed_counter.get("proposed_bed_id"):
             target_bed_p0 = bed_counter.get("proposed_bed_id")
-            target_dept_p0 = bed_counter.get("proposed_department_id")
+            target_dept_p0 = bed_counter.get("proposed_department_id") or target_dept_p0
 
         if staff_revised and staff_revised.get("assigned_doctor_id"):
             assigned_doc_p0 = staff_revised.get("assigned_doctor_id")
@@ -129,6 +140,11 @@ class CoordinatorAgent(BaseAgent):
                     target_dept_p0 = bed_resp.get("department_id") or bed_resp.get("counter_department_id")
 
         # Plan 0: Primary Optimal / Negotiated Plan
+        plan0_desc = (
+            f"Direct placement in bed {target_bed_p0} ({target_dept_p0}) with assigned doctor {assigned_doc_p0}."
+            if target_bed_p0
+            else f"Requested placement in {target_dept_p0} ({req_care_level}) - zero compatible beds currently available."
+        )
         candidates.append({
             "plan_index": 0,
             "plan_type": "PRIMARY_RECOMMENDED" if not revised else "NEGOTIATED_OPTIMAL",
@@ -144,32 +160,34 @@ class CoordinatorAgent(BaseAgent):
             "resource_util_score": 0.88,
             "staff_balance_score": 0.90 if staff_output["feasibility"] in ["FEASIBLE", "REBALANCED"] else 0.65,
             "hard_constraint_pass": len(conflicts) == 0 or negotiation_status == "RESOLVED",
-            "description": f"Direct placement in {bed_output.get('bed_type', 'unit')} with assigned doctor {assigned_doc_p0}."
+            "description": plan0_desc
         })
 
-        # Plan 1: Step-Down / Alternative Plan
-        alt_bed = (bed_output.get("alternative_beds") or [None])[0]
-        candidates.append({
-            "plan_index": 1,
-            "plan_type": "ALTERNATIVE_STEP_DOWN",
-            "care_level": "EMERGENCY" if triage_output["recommended_care_level"] == "ICU" else "GENERAL",
-            "target_bed_id": alt_bed,
-            "target_department_id": bed_output.get("recommended_department_id"),
-            "department_occupancy_rate": bed_output.get("occupancy_by_department", {}).get(bed_output.get("recommended_department_id")),
-            "assigned_doctor_id": assigned_doc_p0,
-            "assigned_nurse_id": assigned_nurse_p0,
-            "emergency_level": emergency_output.get("emergency_level"),
-            "objective_score": 0.82,
-            "waiting_time_score": 0.85,
-            "resource_util_score": 0.80,
-            "staff_balance_score": 0.85,
-            "hard_constraint_pass": True,
-            "description": f"Alternative placement in bed {alt_bed} with continuous telemetry monitoring."
-        })
+        # Plan 1: Step-Down / Alternative Plan (Only include if a genuine alternative bed exists)
+        alt_beds = [b for b in (bed_output.get("alternative_beds") or []) if b and str(b).strip().lower() not in ["none", "null"]]
+        if alt_beds:
+            alt_bed = alt_beds[0]
+            candidates.append({
+                "plan_index": 1,
+                "plan_type": "ALTERNATIVE_STEP_DOWN",
+                "care_level": "EMERGENCY" if triage_output["recommended_care_level"] == "ICU" else "GENERAL",
+                "target_bed_id": alt_bed,
+                "target_department_id": bed_output.get("recommended_department_id") or target_dept_p0,
+                "department_occupancy_rate": bed_output.get("occupancy_by_department", {}).get(bed_output.get("recommended_department_id")),
+                "assigned_doctor_id": assigned_doc_p0,
+                "assigned_nurse_id": assigned_nurse_p0,
+                "emergency_level": emergency_output.get("emergency_level"),
+                "objective_score": 0.82,
+                "waiting_time_score": 0.85,
+                "resource_util_score": 0.80,
+                "staff_balance_score": 0.85,
+                "hard_constraint_pass": True,
+                "description": f"Alternative placement in bed {alt_bed} with continuous telemetry monitoring."
+            })
 
         # Plan 2: Contingency / Surge Stabilization Plan
         candidates.append({
-            "plan_index": 2,
+            "plan_index": len(candidates),
             "plan_type": "CONTINGENCY_SURGE",
             "care_level": "EMERGENCY_HOLDING",
             "target_bed_id": None,

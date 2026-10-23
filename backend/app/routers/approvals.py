@@ -84,6 +84,7 @@ async def get_approval_item(
 
 
 @router.post("/{approval_id}/review", response_model=ApprovalItemResponse)
+@router.post("/{approval_id}/action", response_model=ApprovalItemResponse)
 async def review_approval_item(
     approval_id: str,
     req: ApprovalActionRequest,

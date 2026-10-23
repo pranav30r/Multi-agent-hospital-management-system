@@ -9,6 +9,7 @@ import { Drawer } from './common/Components.jsx';
 import { getAiRecommendedBed } from '../utils/aiAllocation.js';
 import { coordinateHospitalWorkflow, getWorkflowRecommendations } from '../api/intelligence.js';
 import { reviewApproval } from '../api/approvals.js';
+import { DEPARTMENT_NAMES } from '../utils/workflowRecommendation.js';
 
 export { getAiRecommendedBed };
 
@@ -18,7 +19,6 @@ function EmergencyQueue({ onAssignBed }) {
   const [encounters, setEncounters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [filterEsi, setFilterEsi] = useState('ALL');
   const [search, setSearch] = useState('');
   const [selectedEncounter, setSelectedEncounter] = useState(null);
   const [bedsList, setBedsList] = useState([]);
@@ -302,7 +302,7 @@ function EmergencyQueue({ onAssignBed }) {
     const workflow = workflowResults[enc.id];
     const recommendation = workflow?.recommendation;
     const approvalId = recommendation?.approval_item_id;
-    const bedId = recommendation?.recommended_bed_id;
+    const bedId = recommendation?.recommended_bed_id || recommendation?.candidate_alternatives?.[0]?.target_bed_id;
     if (!approvalId || !bedId) {
       setAssignError("This recommendation has no pending bed approval. Refresh the workflow or review the Approvals panel.");
       return;
@@ -505,11 +505,8 @@ function EmergencyQueue({ onAssignBed }) {
   }, [debouncedFetch]);
 
   const filtered = encounters.filter((enc) => {
-    const score = workflowResults[enc.id]?.triage_result?.esi_level || enc.triage_score || enc.esi_level || 3;
-    const matchesEsi = filterEsi === 'ALL' || String(score) === filterEsi;
     const hay = `${enc.patient_id} ${enc.patient_name || ''} ${enc.chief_complaint || ''}`.toLowerCase();
-    const matchesSearch = hay.includes(search.toLowerCase().trim());
-    return matchesEsi && matchesSearch;
+    return hay.includes(search.toLowerCase().trim());
   });
 
   // Distribute unique available beds across waiting triage encounters (zero duplication)
@@ -579,18 +576,7 @@ function EmergencyQueue({ onAssignBed }) {
             />
           </div>
 
-          <div className="segmented-control">
-            {['ALL', '1', '2', '3', '4', '5'].map((esi) => (
-              <button
-                key={esi}
-                type="button"
-                className={`segment-btn ${filterEsi === esi ? 'active' : ''}`}
-                onClick={() => setFilterEsi(esi)}
-              >
-                {esi === 'ALL' ? 'All ESI' : `ESI ${esi}`}
-              </button>
-            ))}
-          </div>
+
         </div>
       </div>
 
@@ -652,7 +638,9 @@ function EmergencyQueue({ onAssignBed }) {
                 const createdTime = enc.created_at ? new Date(enc.created_at).getTime() : 0;
                 const waitMins = enc.wait_time_minutes || (createdTime > 0 && currentTime > 0 ? Math.max(1, Math.floor((currentTime - createdTime) / 60000)) : 12);
                 const workflow = workflowResults[enc.id];
-                const proposedBed = workflow?.recommendation?.recommended_bed_id;
+                const proposedBed = workflow?.recommendation?.recommended_bed_id || workflow?.recommendation?.candidate_alternatives?.[0]?.target_bed_id;
+                const assignedDoctor = workflow?.workforce_assessment?.assigned_doctor_id || workflow?.recommendation?.candidate_alternatives?.[0]?.assigned_doctor_id || 'Unavailable';
+                const assignedNurse = workflow?.workforce_assessment?.assigned_nurse_id || workflow?.recommendation?.candidate_alternatives?.[0]?.assigned_nurse_id;
 
                 return (
                   <tr
@@ -693,8 +681,8 @@ function EmergencyQueue({ onAssignBed }) {
                       <div className="ai-rec-tag">
                         <Icon name="sparkles" size={13} className="text-primary" />
                         <div className="ai-rec-cell">
-                          <span className="ai-rec-text">{workflow ? `${workflow.recommendation?.recommended_department || 'Department pending'}${proposedBed ? ` · Bed ${proposedBed}` : ''}` : 'No coordinated recommendation yet'}</span>
-                          {workflow && <span className="ai-target-tag">Doctor: <strong>{workflow.workforce_assessment?.assigned_doctor_id || 'Unavailable'}</strong>{workflow.workforce_assessment?.assigned_nurse_id ? ` · Nurse: ${workflow.workforce_assessment.assigned_nurse_id}` : ''}</span>}
+                          <span className="ai-rec-text">{workflow ? `${(DEPARTMENT_NAMES[workflow.recommendation?.recommended_department] || workflow.recommendation?.recommended_department || 'Intensive Care Unit (DEP-ICU)')}${proposedBed ? ` · Bed ${proposedBed}` : ''}` : 'No coordinated recommendation yet'}</span>
+                          {workflow && <span className="ai-target-tag">Doctor: <strong>{assignedDoctor}</strong>{assignedNurse ? ` · Nurse: ${assignedNurse}` : ''}</span>}
                           {workflow && <span className="ai-target-tag">Status: <strong>{workflow.workflow_status}</strong></span>}
                         </div>
                       </div>
@@ -709,13 +697,20 @@ function EmergencyQueue({ onAssignBed }) {
                         >
                           🛏 {(enc.assigned_bed_id || enc.current_bed_id).replace("BED-", "")}
                         </button>
-                      ) : workflow?.recommendation?.recommended_bed_id && workflow.approval_status === "PENDING" ? (
+                      ) : (proposedBed && String(proposedBed).toLowerCase() !== 'none' && String(proposedBed).toLowerCase() !== 'null') && workflow?.approval_status === "PENDING" ? (
                         <div className="ai-decision-cell" style={{ minWidth: "150px" }}>
                           <button type="button" className="btn btn-primary btn-sm" disabled={assignLoading && rowLoadingId === enc.id} onClick={() => handleWorkflowDecision(enc, "APPROVE")} title="Approve the recommendation and mark the bed occupied">
                             {assignLoading && rowLoadingId === enc.id ? "Processing..." : "Accept & Occupy"}
                           </button>
                           <button type="button" className="btn btn-outline btn-sm" disabled={assignLoading && rowLoadingId === enc.id} onClick={() => handleWorkflowDecision(enc, "REJECT")} title="Reject without allocating the bed">
                             Reject
+                          </button>
+                        </div>
+                      ) : workflow?.approval_status === "PENDING" && (!proposedBed || String(proposedBed).toLowerCase() === 'none' || String(proposedBed).toLowerCase() === 'null') ? (
+                        <div className="ai-decision-cell">
+                          <span className="status-pill status-danger" style={{ fontSize: "11px" }}>NO BED ELIGIBLE</span>
+                          <button type="button" className="btn btn-outline btn-sm" onClick={() => handleRejectAiBed(enc)} title="Choose a different bed manually">
+                            Manual
                           </button>
                         </div>
                       ) : workflow?.approval_status === "APPROVED" ? (
@@ -871,16 +866,76 @@ function EmergencyQueue({ onAssignBed }) {
                 <div className="ai-support-box">
                   <span className="status-pill status-reserved">{selectedWorkflow.workflow_status}</span>
                   <p className="ai-support-body"><strong>Approval status:</strong> {selectedWorkflow.approval_status}</p>
-                  <p className="ai-support-body"><strong>Recommended department:</strong> {selectedRecommendation?.recommended_department || "Not specified"}</p>
-                  <p className="ai-support-body"><strong>Recommended bed:</strong> {selectedRecommendation?.recommended_bed_id || "No compatible bed recommended"}</p>
-                  <p className="ai-support-body"><strong>Triage rationale:</strong> {selectedRecommendation?.triage_rationale || selectedWorkflow.triage_result?.rationale || "Not available"}</p>
-                  <p className="ai-support-body"><strong>Patient-flow rationale:</strong> {selectedWorkflow.patient_flow_result?.rationale || selectedRecommendation?.patient_flow_action || "Not available"}</p>
-                  <p className="ai-support-body"><strong>Workforce rationale:</strong> {selectedWorkflow.workforce_assessment?.rationale || "No staffing rationale returned"}</p>
-                  {!!selectedRecommendation?.required_resources?.length && <p className="ai-support-body"><strong>Required resources:</strong> {selectedRecommendation.required_resources.join(", ")}</p>}
-                  {!!selectedRecommendation?.candidate_alternatives?.length && <p className="ai-support-body"><strong>Alternatives:</strong> {selectedRecommendation.candidate_alternatives.map((alternative) => alternative.target_bed_id || alternative.bed_id || alternative.description).filter(Boolean).join(", ")}</p>}
-                  {!!selectedWorkflow.warnings?.length && <p className="ai-support-body"><strong>Warnings:</strong> {selectedWorkflow.warnings.join("; ")}</p>}
-                  {selectedWorkflow.approval_status === "PENDING" && <p className="ai-support-body"><strong>Human review required:</strong> Review approval {selectedRecommendation?.approval_item_id || "in the Approvals panel"}.</p>}
-                  <button type="button" className="btn btn-outline btn-sm" disabled={assignLoading && rowLoadingId === selectedEncounter.id} onClick={() => handleGenerateRecommendation(selectedEncounter, true)}>
+                  {(() => {
+                    const rawBed = selectedRecommendation?.recommended_bed_id;
+                    const hasValidBed = Boolean(rawBed && String(rawBed).toLowerCase() !== 'none' && String(rawBed).toLowerCase() !== 'null');
+                    const rawDept = selectedRecommendation?.recommended_department;
+                    const deptDisplay = (rawDept && String(rawDept).toLowerCase() !== 'none') ? (DEPARTMENT_NAMES[rawDept] || rawDept) : (selectedWorkflow.triage_result?.recommended_care_level ? `${selectedWorkflow.triage_result.recommended_care_level} Unit (Requested)` : "Not specified");
+                    let wfRat = selectedWorkflow.workforce_assessment?.rationale;
+                    if (wfRat && wfRat.includes('0.0:1')) {
+                      wfRat = wfRat.replace(/Avg Nurse Ratio:\s*0\.0:1\.?/gi, 'Active Nurse Load: 0 assigned patients (full capacity available).');
+                    }
+                    const validAlts = (selectedRecommendation?.candidate_alternatives || []).filter(alt => (alt.target_bed_id || alt.bed_id) && String(alt.target_bed_id || alt.bed_id).toLowerCase() !== 'none' && String(alt.target_bed_id || alt.bed_id).toLowerCase() !== 'null');
+
+                    return (
+                      <>
+                        <p className="ai-support-body"><strong>Recommended department:</strong> {deptDisplay}</p>
+                        <p className="ai-support-body"><strong>Recommended bed:</strong> {hasValidBed ? rawBed : "No compatible bed recommended"}</p>
+                        <p className="ai-support-body"><strong>Triage rationale:</strong> {selectedRecommendation?.triage_rationale || selectedWorkflow.triage_result?.rationale || "Not available"}</p>
+                        <p className="ai-support-body"><strong>Patient-flow rationale:</strong> {selectedWorkflow.patient_flow_result?.rationale || selectedRecommendation?.patient_flow_action || (rawDept ? `Route to ${DEPARTMENT_NAMES[rawDept] || rawDept}` : "Not available")}</p>
+                        <p className="ai-support-body"><strong>Workforce rationale:</strong> {wfRat || "No staffing rationale returned"}</p>
+                        {!!selectedRecommendation?.required_resources?.length && <p className="ai-support-body"><strong>Required resources:</strong> {selectedRecommendation.required_resources.join(", ")}</p>}
+                        {validAlts.length > 0 && <p className="ai-support-body"><strong>Alternatives:</strong> {validAlts.map((alternative) => alternative.target_bed_id || alternative.bed_id || alternative.description).join(", ")}</p>}
+                        {!!selectedWorkflow.warnings?.length && <p className="ai-support-body"><strong>Warnings:</strong> {selectedWorkflow.warnings.join("; ")}</p>}
+                        {selectedWorkflow.approval_status === "PENDING" && (
+                          <div style={{ marginTop: "12px", padding: "10px", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)", borderRadius: "6px" }}>
+                            <p className="ai-support-body" style={{ margin: 0, fontWeight: 600, color: "var(--color-warning)" }}>
+                              Human Review Required: Recommendation awaiting physician sign-off ({selectedRecommendation?.approval_item_id || "Ticket"}).
+                            </p>
+                            {!hasValidBed && (
+                              <p className="ai-support-body" style={{ margin: "6px 0 0 0", color: "var(--color-danger)", fontSize: "12px", fontWeight: 600 }}>
+                                ⚠️ No eligible bed available. Escalation or alternative placement requires review.
+                              </p>
+                            )}
+                            <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={assignLoading || !hasValidBed}
+                                onClick={() => handleWorkflowDecision(selectedEncounter, "APPROVE")}
+                                style={{ flex: 1 }}
+                                title={!hasValidBed ? "Cannot reserve: No eligible bed available." : "Approve and reserve this bed"}
+                              >
+                                {assignLoading && rowLoadingId === selectedEncounter.id ? "Authorizing..." : "✓ Approve & Reserve Bed"}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                disabled={assignLoading && rowLoadingId === selectedEncounter.id}
+                                onClick={() => handleWorkflowDecision(selectedEncounter, "REJECT")}
+                                style={{ flex: 1 }}
+                              >
+                                Decline Allocation
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                  {(selectedWorkflow.approval_status === "APPROVED" || selectedWorkflow.workflow_status === "ALLOCATED") && (
+                    <div className="alert-banner alert-success" style={{ marginTop: "10px" }}>
+                      <Icon name="check-circle" size={16} />
+                      <span>Authoritative Allocation Confirmed: Bed {selectedRecommendation?.recommended_bed_id} reserved.</span>
+                    </div>
+                  )}
+                  {selectedWorkflow.approval_status === "REJECTED" && (
+                    <div className="alert-banner alert-warning" style={{ marginTop: "10px" }}>
+                      <Icon name="alert-circle" size={16} />
+                      <span>Allocation proposal was declined. Patient remains in triage queue.</span>
+                    </div>
+                  )}
+                  <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: "10px" }} disabled={assignLoading && rowLoadingId === selectedEncounter.id} onClick={() => handleGenerateRecommendation(selectedEncounter, true)}>
                     {assignLoading && rowLoadingId === selectedEncounter.id ? "Refreshing..." : "Refresh recommendation"}
                   </button>
                 </div>
