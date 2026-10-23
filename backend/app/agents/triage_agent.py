@@ -49,6 +49,7 @@ class TriageAgent(BaseAgent):
             "RF_CRITICAL_HYPOXIA", "RF_HYPOTENSION", "RF_SEVERE_BRADYCARDIA",
             "RF_SEVERE_TACHYPNEA", "RF_SEVERE_BRADYPNEA", "RF_ALTERED_GCS",
             "RF_ACUTE_HEMORRHAGE", "RF_ANAPHYLACTIC_SUSPICION",
+            "RF_RESPIRATORY_DISTRESS", "RF_SEVERE_URGENT_PRESENTATION",
         }
         has_critical_flag = any(flag.get("code") in critical_flag_codes for flag in red_flags)
 

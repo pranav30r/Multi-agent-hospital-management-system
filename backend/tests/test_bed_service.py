@@ -2,6 +2,7 @@ import pytest
 from fastapi import HTTPException
 from app.services.bed_service import BedService
 from app.models.patient import Patient, Encounter
+from app.models.bed import Bed, BedAssignment
 
 @pytest.mark.asyncio
 async def test_bed_service_direct_operations(test_db):
@@ -72,3 +73,44 @@ async def test_bed_service_direct_operations(test_db):
             actor_role="DOCTOR"
         )
         assert occupied_bed.status == "OCCUPIED"
+
+
+@pytest.mark.asyncio
+async def test_confirming_transfer_releases_previous_ward_bed(test_db):
+    async with test_db() as session:
+        patient = Patient(
+            id="PAT-TRANSFER-01", first_name="Vijay", last_name="Agrawal", age=43,
+            gender="M", blood_group="O+", contact_phone="+919876540001",
+            emergency_contact="+919876540002",
+        )
+        encounter = Encounter(
+            id="ENC-TRANSFER-01", patient_id=patient.id, chief_complaint="Severe respiratory problem",
+            current_department_id="DEP-WA", current_bed_id="BED-WA-01",
+        )
+        old_bed = await session.get(Bed, "BED-WA-01")
+        icu_bed = await session.get(Bed, "BED-ICU-07")
+        old_bed.status = "OCCUPIED"
+        old_bed.current_patient_id = patient.id
+        old_bed.current_encounter_id = encounter.id
+        icu_bed.status = "RESERVED"
+        icu_bed.current_patient_id = patient.id
+        icu_bed.current_encounter_id = encounter.id
+        session.add_all([
+            patient,
+            encounter,
+            BedAssignment(bed_id=old_bed.id, encounter_id=encounter.id, patient_id=patient.id, assigned_by="DOC-001", status="OCCUPIED"),
+            BedAssignment(bed_id=icu_bed.id, encounter_id=encounter.id, patient_id=patient.id, assigned_by="DOC-001", status="RESERVED"),
+        ])
+        await session.commit()
+
+        await BedService(session).confirm_patient_arrival(
+            bed_id=icu_bed.id, actor_id="DOC-001", actor_role="DOCTOR", tenant_id="HOSP-DEFAULT"
+        )
+
+        await session.refresh(old_bed)
+        await session.refresh(icu_bed)
+        await session.refresh(encounter)
+        assert old_bed.status == "AVAILABLE"
+        assert old_bed.current_encounter_id is None
+        assert icu_bed.status == "OCCUPIED"
+        assert encounter.current_bed_id == icu_bed.id

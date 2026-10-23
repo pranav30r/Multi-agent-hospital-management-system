@@ -393,7 +393,7 @@ class ApprovalService:
         bed.current_encounter_id = enc_id
 
         # 5. Synchronize Encounter
-        encounter.current_bed_id = target_bed_id
+        encounter.current_bed_id = encounter.current_bed_id or target_bed_id
         encounter.bed_reserved_time = utc_now()
         encounter.patient_status = "BED_RESERVED"
         if effective_payload.get("assigned_doctor_id"):

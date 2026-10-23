@@ -191,6 +191,7 @@ class BedService:
         if bed.status != "RESERVED":
             raise HTTPException(status_code=400, detail=f"Bed {bed_id} status is '{bed.status}', expected 'RESERVED'")
 
+        released_bed_id = None
         try:
             # 2. Mutate Bed state
             old_status = bed.status
@@ -201,8 +202,53 @@ class BedService:
                 res_enc = await self.db.execute(select(Encounter).where(Encounter.id == bed.current_encounter_id))
                 encounter = res_enc.scalars().first()
                 if encounter:
+                    previous_bed_id = encounter.current_bed_id
+                    if previous_bed_id and previous_bed_id != bed.id:
+                        previous_query = select(Bed).where(Bed.id == previous_bed_id)
+                        if tenant_id:
+                            previous_query = previous_query.join(Department, Bed.department_id == Department.id).where(Department.tenant_id == tenant_id)
+                        previous_result = await self.db.execute(previous_query.with_for_update())
+                        previous_bed = previous_result.scalars().first()
+                        if previous_bed and previous_bed.current_encounter_id == encounter.id and previous_bed.status in ["OCCUPIED", "RESERVED"]:
+                            old_status = previous_bed.status
+                            previous_bed.status = "AVAILABLE"
+                            previous_bed.current_patient_id = None
+                            previous_bed.current_encounter_id = None
+                            released_bed_id = previous_bed.id
+                            previous_assignments = await self.db.execute(
+                                select(BedAssignment).where(
+                                    BedAssignment.encounter_id == encounter.id,
+                                    BedAssignment.bed_id == previous_bed.id,
+                                    BedAssignment.status.in_(["RESERVED", "OCCUPIED"]),
+                                ).with_for_update()
+                            )
+                            for previous_assignment in previous_assignments.scalars().all():
+                                previous_assignment.status = "RELEASED"
+                                previous_assignment.released_at = utc_now()
+                            self.db.add(AuditLog(
+                                tenant_id=tenant_id or "HOSP-DEFAULT",
+                                entity_type="bed",
+                                entity_id=previous_bed.id,
+                                field_changed="status",
+                                old_value=old_status,
+                                new_value="AVAILABLE",
+                                changed_by=actor_id,
+                                change_reason=f"Released after patient transfer to bed {bed.id}",
+                            ))
+                    encounter.current_bed_id = bed.id
                     encounter.bed_occupied_time = utc_now()
                     encounter.patient_status = "ADMITTED"
+
+            assignment_result = await self.db.execute(
+                select(BedAssignment).where(
+                    BedAssignment.bed_id == bed.id,
+                    BedAssignment.encounter_id == bed.current_encounter_id,
+                    BedAssignment.status == "RESERVED",
+                ).with_for_update()
+            )
+            for assignment in assignment_result.scalars().all():
+                assignment.status = "OCCUPIED"
+                assignment.occupied_at = utc_now()
 
             # 4. Record AuditLog entry
             audit = AuditLog(
@@ -226,6 +272,13 @@ class BedService:
         logger.info(f"Patient Arrival Confirmed: Bed {bed_id} OCCUPIED")
 
         from app.services.events import event_bus
+        if released_bed_id:
+            await event_bus.publish({
+                "event_type": "BED_RELEASED",
+                "tenant_id": tenant_id or "HOSP-DEFAULT",
+                "source": "bed_service",
+                "payload": {"bed_id": released_bed_id, "status": "AVAILABLE", "encounter_id": bed.current_encounter_id},
+            }, tenant_id=tenant_id or "HOSP-DEFAULT")
         await event_bus.publish({
             "event_type": "BED_OCCUPIED",
             "tenant_id": tenant_id or "HOSP-DEFAULT",

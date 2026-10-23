@@ -1,4 +1,6 @@
 import pytest
+from types import SimpleNamespace
+from app.agents.triage_agent import TriageAgent
 from app.services.red_flag_service import RedFlagService
 
 
@@ -74,6 +76,44 @@ def test_heavy_blood_loss_and_unconsciousness_are_red_flags():
 
     assert "RF_ACUTE_HEMORRHAGE" in codes
     assert "RF_ACUTE_NEUROLOGICAL_DEFICIT" in codes
+
+
+def test_severe_urgent_breathing_complaint_escalates_red_flags():
+    flags = RedFlagService().detect_red_flags(
+        encounter_vitals={},
+        chief_complaint="Severe condition, breathing problem; urgent treatment needed",
+    )
+    codes = {flag["code"] for flag in flags}
+
+    assert "RF_RESPIRATORY_DISTRESS" in codes
+    assert "RF_SEVERE_URGENT_PRESENTATION" in codes
+
+
+@pytest.mark.asyncio
+async def test_severe_urgent_breathing_complaint_routes_to_icu_even_if_initial_esi_is_three():
+    flags = RedFlagService().detect_red_flags(
+        encounter_vitals={},
+        chief_complaint="Severe condition, breathing problem; urgent treatment needed",
+    )
+    agent = TriageAgent(db=None)
+
+    class IntelligenceService:
+        async def get_assessment(self, encounter_id):
+            return SimpleNamespace(severity="HIGH", score=70, red_flags=flags)
+
+    class PriorityService:
+        async def evaluate_priority(self, encounter_id, actor_id):
+            return SimpleNamespace(priority_level="CRITICAL")
+
+    agent.intelligence_service = IntelligenceService()
+    agent.priority_service = PriorityService()
+    result = await agent.evaluate(
+        encounter=SimpleNamespace(id="ENC-TEST", esi_level=3, chief_complaint="Severe condition, breathing problem", spo2=None, gcs_score=None),
+        patient=SimpleNamespace(),
+    )
+
+    assert result["esi_level"] == 1
+    assert result["recommended_care_level"] == "ICU"
 
 
 def test_red_flag_symptoms_and_pain():

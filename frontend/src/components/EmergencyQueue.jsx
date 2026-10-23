@@ -327,7 +327,11 @@ function EmergencyQueue({ onAssignBed }) {
           arrivalError = err.message || "Patient arrival could not be confirmed.";
         }
         setEncounters((previous) => previous.map((item) => item.id === enc.id
-          ? { ...item, assigned_bed_id: bedId, current_bed_id: bedId }
+          ? {
+              ...item,
+              assigned_bed_id: bedStatus === "OCCUPIED" ? bedId : (item.assigned_bed_id || item.current_bed_id || bedId),
+              current_bed_id: bedStatus === "OCCUPIED" ? bedId : (item.current_bed_id || bedId),
+            }
           : item));
         setBedsList((previous) => previous.map((bed) => bed.id === bedId
           ? { ...bed, status: bedStatus, current_patient_id: enc.patient_id, current_encounter_id: enc.id }
@@ -696,7 +700,7 @@ function EmergencyQueue({ onAssignBed }) {
                       </div>
                     </td>
                     <td className="text-right" onClick={(e) => e.stopPropagation()}>
-                      {(enc.assigned_bed_id || enc.current_bed_id) ? (
+                      {(enc.assigned_bed_id || enc.current_bed_id) && workflow?.approval_status !== "PENDING" ? (
                         <button
                           type="button"
                           className="btn btn-secondary btn-sm assigned-bed-btn"
