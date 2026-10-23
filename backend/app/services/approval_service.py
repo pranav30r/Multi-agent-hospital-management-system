@@ -92,6 +92,20 @@ class ApprovalService:
         res = await self.db.execute(stmt)
         return res.scalars().all()
 
+    async def list_approval_history(
+        self,
+        tenant_id: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50
+    ) -> List[ApprovalItem]:
+        """List reviewed approval outcomes for a tenant, newest first."""
+        stmt = select(ApprovalItem).where(ApprovalItem.reviewed_at.is_not(None))
+        if tenant_id:
+            stmt = stmt.where(ApprovalItem.tenant_id == tenant_id)
+        stmt = stmt.order_by(ApprovalItem.reviewed_at.desc()).offset(skip).limit(limit)
+        res = await self.db.execute(stmt)
+        return res.scalars().all()
+
     async def get_approval_by_id(self, approval_id: str, tenant_id: Optional[str] = None) -> Optional[ApprovalItem]:
         """Fetch an approval item by its unique ID with optional tenant scope."""
         stmt = select(ApprovalItem).where(ApprovalItem.id == approval_id)

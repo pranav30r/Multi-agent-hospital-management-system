@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { listPendingApprovals, reviewApproval } from '../api/approvals.js';
+import { listApprovalHistory, listPendingApprovals, reviewApproval } from '../api/approvals.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useEvents } from '../context/EventContext.jsx';
 import { useDemo } from '../context/DemoContext.jsx';
@@ -42,6 +42,16 @@ function ApprovalsPanel() {
     }
   }, [demoMode, demoData]);
 
+  const fetchHistory = useCallback(async () => {
+    if (demoMode) return;
+    try {
+      const data = await listApprovalHistory();
+      setHistory(data || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [demoMode]);
+
   const debounceTimerRef = useRef(null);
   const debouncedFetch = useCallback(() => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -58,13 +68,18 @@ function ApprovalsPanel() {
   }, [fetchApprovals]);
 
   useEffect(() => {
-    if (lastEvent && ['APPROVAL_REQUIRED', 'APPROVAL_REVIEWED', 'APPROVAL_DECIDED', 'BED_RESERVED', 'SYSTEM_CONNECTED'].includes(lastEvent.event_type)) {
-      debouncedFetch();
-    }
-  }, [lastEvent, debouncedFetch]);
+    if (activeTab === 'history') fetchHistory();
+  }, [activeTab, fetchHistory]);
 
   useEffect(() => {
-    const handler = () => debouncedFetch();
+    if (lastEvent && ['APPROVAL_REQUIRED', 'APPROVAL_REVIEWED', 'APPROVAL_DECIDED', 'RECOMMENDATION_GENERATED', 'BED_RESERVED', 'BED_OCCUPIED', 'BED_RELEASED', 'EMERGENCY_DECLARED', 'EMERGENCY_ESCALATED', 'SYSTEM_CONNECTED'].includes(lastEvent.event_type)) {
+      debouncedFetch();
+      fetchHistory();
+    }
+  }, [lastEvent, debouncedFetch, fetchHistory]);
+
+  useEffect(() => {
+    const handler = () => { debouncedFetch(); fetchHistory(); };
     window.addEventListener("websocket:reconnected", handler);
     window.addEventListener("app:refresh-authoritative", handler);
     window.addEventListener("app:poll-refresh", handler);
@@ -73,7 +88,7 @@ function ApprovalsPanel() {
       window.removeEventListener("app:refresh-authoritative", handler);
       window.removeEventListener("app:poll-refresh", handler);
     };
-  }, [debouncedFetch]);
+  }, [debouncedFetch, fetchHistory]);
 
   const handleReview = async (approvalId, action, reason, modification) => {
     setActionLoading(approvalId);
@@ -83,12 +98,13 @@ function ApprovalsPanel() {
         if (action === 'REJECT' && reason) body.rejection_reason = reason;
         if (action === 'MODIFY') body.modification = modification;
         await reviewApproval(approvalId, body);
+        await Promise.all([fetchApprovals(), fetchHistory()]);
       }
 
       // Add to local history list
       const target = approvals.find((a) => a.id === approvalId);
       if (target) {
-        setHistory((prev) => [
+        if (demoMode) setHistory((prev) => [
           {
             ...target,
             decision: action,
@@ -226,9 +242,7 @@ function ApprovalsPanel() {
                     </div>
 
                     <div className="risk-confidence-group">
-                      <span className="confidence-pill">
-                        Confidence: {Math.round((item.confidence || 0.92) * 100)}%
-                      </span>
+                      {item.confidence != null && <span className="confidence-pill">Confidence: {Math.round(item.confidence * 100)}%</span>}
                       <span className={`risk-badge-clean risk-${(item.risk_level || 'MEDIUM').toLowerCase()}`}>
                         {item.risk_level || 'MEDIUM'} RISK
                       </span>
@@ -351,15 +365,15 @@ function ApprovalsPanel() {
                   <tbody>
                     {history.map((h, i) => (
                       <tr key={i}>
-                        <td className="font-mono text-xs text-muted">{new Date(h.decision_time).toLocaleTimeString()}</td>
+                        <td className="font-mono text-xs text-muted">{h.reviewed_at ? new Date(h.reviewed_at).toLocaleString() : '—'}</td>
                         <td className="font-semibold">{h.patient_name || h.patient_id}</td>
                         <td className="text-xs font-mono">{formatProposedAction(h.proposed_action)}</td>
                         <td>
-                          <span className={`status-pill ${h.decision === 'APPROVE' ? 'status-available' : 'status-occupied'}`}>
-                            {h.decision}
+                          <span className={`status-pill ${['APPROVE', 'APPROVED', 'MODIFY', 'MODIFIED'].includes(h.review_action || h.status) ? 'status-available' : 'status-occupied'}`}>
+                            {h.review_action || h.status}
                           </span>
                         </td>
-                        <td className="text-secondary">{h.decision_by}</td>
+                        <td className="text-secondary">{h.reviewed_by || '—'}</td>
                         <td className="text-muted text-xs">{h.rejection_reason || '—'}</td>
                       </tr>
                     ))}

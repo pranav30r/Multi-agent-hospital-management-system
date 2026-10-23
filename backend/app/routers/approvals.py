@@ -57,6 +57,18 @@ async def list_pending_approvals(
     return await service.list_pending_approvals(tenant_id=current_staff.tenant_id, skip=skip, limit=limit)
 
 
+@router.get("/history", response_model=List[ApprovalItemResponse])
+async def list_approval_history(
+    skip: int = 0,
+    limit: int = 50,
+    current_staff: Staff = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db)
+):
+    """List reviewed recommendations and outcomes for the authenticated tenant."""
+    service = ApprovalService(db)
+    return await service.list_approval_history(tenant_id=current_staff.tenant_id, skip=skip, limit=limit)
+
+
 @router.get("/{approval_id}", response_model=ApprovalItemResponse)
 async def get_approval_item(
     approval_id: str,

@@ -40,3 +40,11 @@ async def test_approvals_list(auth_client):
     res = await auth_client.get("/api/v1/approvals/pending")
     assert res.status_code == 200
     assert isinstance(res.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_approval_history_list(auth_client):
+    """Test the tenant-authenticated approval outcome history endpoint."""
+    res = await auth_client.get("/api/v1/approvals/history")
+    assert res.status_code == 200
+    assert isinstance(res.json(), list)
