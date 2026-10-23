@@ -7,7 +7,9 @@ concurrency control, and executes multi-agent orchestration within isolated data
 """
 
 import asyncio
+import json
 import logging
+import uuid
 from typing import Dict, Any, Optional, Set, List, Callable
 from pydantic import BaseModel, Field
 from fastapi import HTTPException
@@ -15,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.database import AsyncSessionLocal
-from app.models.patient import Encounter
+from app.models.patient import Encounter, Patient
 from app.services.agent_orchestrator import MultiAgentOrchestratorService
 from app.services.events import event_bus, get_tenant_channel
 
@@ -34,7 +36,7 @@ class EventListenerConfig(BaseModel):
     queue_max_size: int = Field(default=500, ge=10)
     worker_concurrency: int = Field(default=2, ge=1, le=10)
     dedup_window_size: int = Field(default=1000, ge=100)
-    enable_redis_pubsub: bool = False  # Local fallback is always enabled; Redis optional
+    enable_redis_pubsub: bool = True
 
 
 class AgentEventListener:
@@ -53,6 +55,7 @@ class AgentEventListener:
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=self.config.queue_max_size)
         self._running: bool = False
         self._worker_tasks: List[asyncio.Task] = []
+        self._redis_listener_task: Optional[asyncio.Task] = None
         
         # Concurrency & Idempotency Controls
         self._in_flight_encounters: Set[str] = set()
@@ -90,6 +93,10 @@ class AgentEventListener:
                 name=f"agent_event_worker_{i + 1}"
             )
             self._worker_tasks.append(task)
+        if self.config.enable_redis_pubsub:
+            self._redis_listener_task = asyncio.create_task(
+                self._redis_subscription_loop(), name="agent_event_redis_subscriber"
+            )
 
         logger.info("AgentEventListener started successfully.")
 
@@ -100,6 +107,12 @@ class AgentEventListener:
 
         logger.info("Stopping AgentEventListener background workers...")
         self._running = False
+        event_bus.unregister_local_subscriber(self.handle_event_callback)
+
+        if self._redis_listener_task and not self._redis_listener_task.done():
+            self._redis_listener_task.cancel()
+            await asyncio.gather(self._redis_listener_task, return_exceptions=True)
+        self._redis_listener_task = None
 
         # Cancel workers
         for task in self._worker_tasks:
@@ -120,6 +133,59 @@ class AgentEventListener:
 
         logger.info("AgentEventListener stopped cleanly.")
 
+    async def _redis_subscription_loop(self) -> None:
+        """Subscribes to tenant event channels and reconnects after Redis interruptions."""
+        retry_delay = self.config.base_backoff_seconds
+        while self._running:
+            pubsub = None
+            try:
+                client = await event_bus.manager.get_client()
+                if client is None:
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * self.config.backoff_multiplier, 5.0)
+                    continue
+                pubsub = client.pubsub()
+                await pubsub.psubscribe("hospital:events:*")
+                retry_delay = self.config.base_backoff_seconds
+                async for message in pubsub.listen():
+                    if not self._running:
+                        break
+                    if message.get("type") != "pmessage":
+                        continue
+                    event = self._decode_redis_event(message.get("data"), message.get("channel"))
+                    if event:
+                        await self.handle_event_callback(event["tenant_id"], event)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Agent event Redis subscription interrupted: %s", exc)
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * self.config.backoff_multiplier, 5.0)
+            finally:
+                if pubsub is not None:
+                    try:
+                        await pubsub.punsubscribe("hospital:events:*")
+                        await pubsub.aclose()
+                    except Exception:
+                        pass
+
+    @staticmethod
+    def _decode_redis_event(raw_event: Any, channel: Any) -> Optional[dict]:
+        """Validates event JSON and ensures its tenant matches the Redis channel."""
+        try:
+            channel_name = channel.decode() if isinstance(channel, bytes) else str(channel)
+            channel_tenant = channel_name.removeprefix("hospital:events:")
+            if not channel_tenant or channel_tenant == channel_name:
+                return None
+            event = json.loads(raw_event.decode() if isinstance(raw_event, bytes) else raw_event)
+            if not isinstance(event, dict) or event.get("tenant_id") != channel_tenant:
+                logger.warning("Discarded Redis event with tenant/channel mismatch")
+                return None
+            return event
+        except (TypeError, ValueError, UnicodeDecodeError):
+            logger.warning("Discarded malformed Redis hospital event")
+            return None
+
     # ─── Event Ingestion (Non-Blocking) ───────────────────────────────────────
 
     async def handle_event_callback(self, tenant_id: str, event_data: dict) -> None:
@@ -133,6 +199,18 @@ class AgentEventListener:
 
         self.stats["events_received"] += 1
         event_id = event_data.get("event_id")
+
+        if event_data.get("tenant_id") != tenant_id:
+            logger.warning("Discarded event whose payload tenant did not match its routing tenant")
+            self.stats["failures"] += 1
+            return
+
+        try:
+            get_tenant_channel(tenant_id)
+        except ValueError:
+            self.stats["failures"] += 1
+            logger.warning("Discarded event with invalid tenant routing key")
+            return
 
         # Fast deduplication check on event_id
         if event_id:
@@ -234,11 +312,17 @@ class AgentEventListener:
             logger.debug("PATIENT_INTAKE_COMPLETED payload has no encounter_id; skipping agent evaluation.")
             return
 
+        acquired, lock_key, lock_token = await self._acquire_distributed_lock(tenant_id, encounter_id)
+        if not acquired:
+            self.stats["duplicates_ignored"] += 1
+            return
+
         # Concurrency guard: avoid evaluating the same encounter in parallel
         async with self._in_flight_lock:
             if encounter_id in self._in_flight_encounters:
                 logger.debug(f"Encounter {encounter_id} is already in-flight for evaluation. Skipping duplicate.")
                 self.stats["duplicates_ignored"] += 1
+                await self._release_distributed_lock(lock_key, lock_token)
                 return
             self._in_flight_encounters.add(encounter_id)
 
@@ -257,6 +341,7 @@ class AgentEventListener:
         finally:
             async with self._in_flight_lock:
                 self._in_flight_encounters.discard(encounter_id)
+            await self._release_distributed_lock(lock_key, lock_token)
 
     async def _handle_emergency_declared(self, payload: dict, tenant_id: str) -> None:
         """
@@ -272,7 +357,9 @@ class AgentEventListener:
         else:
             # Query active encounters in affected departments
             async with self.session_factory() as session:
-                stmt = select(Encounter.id).where(Encounter.status == "ACTIVE")
+                stmt = select(Encounter.id).join(Patient).where(
+                    Encounter.status == "ACTIVE", Patient.tenant_id == tenant_id
+                )
                 if affected_departments:
                     stmt = stmt.where(Encounter.current_department_id.in_(affected_departments))
                 # Cap to prevent unbounded cascading load on massive departments
@@ -285,9 +372,14 @@ class AgentEventListener:
             return
 
         for enc_id in target_encounters:
+            acquired, lock_key, lock_token = await self._acquire_distributed_lock(tenant_id, enc_id)
+            if not acquired:
+                self.stats["duplicates_ignored"] += 1
+                continue
             async with self._in_flight_lock:
                 if enc_id in self._in_flight_encounters:
                     self.stats["duplicates_ignored"] += 1
+                    await self._release_distributed_lock(lock_key, lock_token)
                     continue
                 self._in_flight_encounters.add(enc_id)
 
@@ -306,6 +398,40 @@ class AgentEventListener:
             finally:
                 async with self._in_flight_lock:
                     self._in_flight_encounters.discard(enc_id)
+                await self._release_distributed_lock(lock_key, lock_token)
+
+    async def _acquire_distributed_lock(self, tenant_id: str, encounter_id: str):
+        """Acquires a short Redis lease so multiple API workers do not evaluate one encounter concurrently."""
+        if not isinstance(encounter_id, str) or not encounter_id or len(encounter_id) > 100:
+            return False, None, None
+        try:
+            channel = get_tenant_channel(tenant_id)
+        except ValueError:
+            return False, None, None
+        client = await event_bus.manager.get_client()
+        if client is None:
+            return True, None, None
+        lock_key = f"{channel}:agent-evaluation:{encounter_id}"
+        lock_token = uuid.uuid4().hex
+        try:
+            acquired = await client.set(lock_key, lock_token, nx=True, ex=900)
+        except Exception as exc:
+            logger.warning("Redis evaluation lock unavailable; using process-local guard: %s", exc)
+            return True, None, None
+        return bool(acquired), lock_key, lock_token
+
+    async def _release_distributed_lock(self, lock_key: Optional[str], lock_token: Optional[str]) -> None:
+        if not lock_key or not lock_token:
+            return
+        try:
+            client = await event_bus.manager.get_client()
+            if client is not None:
+                await client.eval(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                    1, lock_key, lock_token
+                )
+        except Exception as exc:
+            logger.warning("Could not release Redis evaluation lock %s: %s", lock_key, exc)
 
 
 # ─── Global Singleton & Factory ───────────────────────────────────────────────

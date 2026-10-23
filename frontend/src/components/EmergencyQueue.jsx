@@ -320,7 +320,7 @@ function EmergencyQueue({ onAssignBed }) {
 
 
   useEffect(() => {
-    if (lastEvent && ['PATIENT_REGISTERED', 'ENCOUNTER_CREATED', 'TRIAGE_UPDATED', 'BED_OCCUPIED', 'SYSTEM_CONNECTED'].includes(lastEvent.event_type)) {
+    if (lastEvent && ['PATIENT_REGISTERED', 'ENCOUNTER_CREATED', 'PATIENT_INTAKE_COMPLETED', 'TRIAGE_UPDATED', 'BED_RESERVED', 'BED_OCCUPIED', 'BED_RELEASED', 'APPROVAL_DECIDED', 'EMERGENCY_DECLARED', 'EMERGENCY_ESCALATED', 'SYSTEM_CONNECTED'].includes(lastEvent.event_type)) {
       debouncedFetch();
     }
   }, [lastEvent, debouncedFetch]);

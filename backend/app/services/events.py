@@ -62,6 +62,11 @@ class RedisEventBus:
         if callback and callback not in self._local_subscribers:
             self._local_subscribers.append(callback)
 
+    def unregister_local_subscriber(self, callback):
+        """Removes an in-process fallback callback when its service stops."""
+        if callback in self._local_subscribers:
+            self._local_subscribers.remove(callback)
+
     async def _dispatch_local_subscribers(self, tenant_id: str, event_dict: dict):
         """Fans out an event to all registered in-process fallback subscribers."""
         for subscriber in list(self._local_subscribers):
