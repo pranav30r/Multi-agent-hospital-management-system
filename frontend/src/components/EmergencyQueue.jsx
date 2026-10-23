@@ -6,6 +6,7 @@ import { useDemo } from '../context/DemoContext.jsx';
 import { Icon } from './common/Icon.jsx';
 import { Drawer } from './common/Components.jsx';
 import { getAiRecommendedBed } from '../utils/aiAllocation.js';
+import { coordinateHospitalWorkflow } from '../api/intelligence.js';
 
 export { getAiRecommendedBed };
 
@@ -28,6 +29,27 @@ function EmergencyQueue({ onAssignBed }) {
   const [showManualOverride, setShowManualOverride] = useState(false);
   const [allocationReason, setAllocationReason] = useState("Immediate triage admission");
   const [currentTime, setCurrentTime] = useState(0);
+  const [workflowResults, setWorkflowResults] = useState({});
+
+  const handleGenerateRecommendation = async (enc) => {
+    setAssignLoading(true);
+    setRowLoadingId(enc.id);
+    setAssignError(null);
+    setAssignSuccess(null);
+    try {
+      if (demoMode) throw new Error("Live workflow recommendations are unavailable in demo mode.");
+      const result = await coordinateHospitalWorkflow(enc.id, { trigger_reason: "FRONTEND_REQUEST" });
+      setWorkflowResults((previous) => ({ ...previous, [enc.id]: result }));
+      setAssignSuccess("Coordinated recommendation generated. Review its status and rationale.");
+      setSelectedEncounter(enc);
+      window.dispatchEvent(new CustomEvent("app:refresh-authoritative"));
+    } catch (err) {
+      setAssignError(err.message || "Failed to generate coordinated recommendation");
+    } finally {
+      setAssignLoading(false);
+      setRowLoadingId(null);
+    }
+  };
 
   const fetchEncounters = useCallback(async () => {
     if (demoMode) {
@@ -101,6 +123,7 @@ function EmergencyQueue({ onAssignBed }) {
   }, [selectedEncounter, bedsList]);
 
   const handleApproveAiBed = async (enc, proposedBedId) => {
+    if (!demoMode) return handleGenerateRecommendation(enc);
     if (!enc || !proposedBedId) return;
     setAssignLoading(true);
     setRowLoadingId(enc.id);
@@ -471,7 +494,7 @@ function EmergencyQueue({ onAssignBed }) {
                 <th>Chief Complaint / Presentation</th>
                 <th>Vitals Snapshot</th>
                 <th>Wait Time</th>
-                <th>AI Bed Recommendation</th>
+                <th>Coordinated Recommendation</th>
                 <th className="text-right">Action</th>
               </tr>
             </thead>
@@ -484,7 +507,8 @@ function EmergencyQueue({ onAssignBed }) {
                 const bp = enc.bp || (vitals.bp_systolic ? `${vitals.bp_systolic}/${vitals.bp_diastolic}` : '—');
                 const createdTime = enc.created_at ? new Date(enc.created_at).getTime() : 0;
                 const waitMins = enc.wait_time_minutes || (createdTime > 0 && currentTime > 0 ? Math.max(1, Math.floor((currentTime - createdTime) / 60000)) : 12);
-                const proposedBed = proposedBedsMap[enc.id] || getAiRecommendedBed(enc, bedsList);
+                const workflow = workflowResults[enc.id];
+                const proposedBed = workflow?.recommendation?.recommended_bed_id;
 
                 return (
                   <tr
@@ -525,12 +549,8 @@ function EmergencyQueue({ onAssignBed }) {
                       <div className="ai-rec-tag">
                         <Icon name="sparkles" size={13} className="text-primary" />
                         <div className="ai-rec-cell">
-                          <span className="ai-rec-text">{enc.ai_recommendation || 'Assign to Emergency Bay'}</span>
-                          {!(enc.assigned_bed_id || enc.current_bed_id) && (
-                            <span className="ai-target-tag">
-                              AI Suggests: <strong>{proposedBed}</strong>
-                            </span>
-                          )}
+                          <span className="ai-rec-text">{workflow ? `${workflow.recommendation?.recommended_department || 'Department pending'}${proposedBed ? ` · Bed ${proposedBed}` : ''}` : 'No coordinated recommendation yet'}</span>
+                          {workflow && <span className="ai-target-tag">Status: <strong>{workflow.workflow_status}</strong></span>}
                         </div>
                       </div>
                     </td>
@@ -548,12 +568,12 @@ function EmergencyQueue({ onAssignBed }) {
                         <div className="ai-decision-cell">
                           <button
                             type="button"
-                            className="btn btn-success btn-sm ai-btn-yes"
+                            className="btn btn-primary btn-sm ai-btn-yes"
                             disabled={assignLoading && rowLoadingId === enc.id}
-                            onClick={() => handleApproveAiBed(enc, proposedBed)}
-                            title={`Confirm AI Bed Allocation (${proposedBed})`}
+                            onClick={() => handleGenerateRecommendation(enc)}
+                            title="Run coordinated agents; route any required allocation approval to clinicians"
                           >
-                            {assignLoading && rowLoadingId === enc.id ? '...' : '✓ Yes'}
+                            {assignLoading && rowLoadingId === enc.id ? 'Analyzing...' : workflow ? 'Refresh recommendation' : 'Run workflow'}
                           </button>
                           <button
                             type="button"
@@ -584,6 +604,8 @@ function EmergencyQueue({ onAssignBed }) {
       >
         {selectedEncounter && (() => {
           const selectedProposedBed = proposedBedsMap[selectedEncounter.id] || getAiRecommendedBed(selectedEncounter, bedsList);
+          const selectedWorkflow = workflowResults[selectedEncounter.id];
+          const selectedRecommendation = selectedWorkflow?.recommendation;
           return (
           <div className="patient-drawer-content">
             <div className="drawer-section">
@@ -632,7 +654,7 @@ function EmergencyQueue({ onAssignBed }) {
                   {selectedEncounter.ai_recommendation || "Patient symptoms warrant immediate telemetry monitoring and formal assessment by the attending ER physician."}
                 </p>
 
-                {!(selectedEncounter.assigned_bed_id || selectedEncounter.current_bed_id) && (
+                {demoMode && !(selectedEncounter.assigned_bed_id || selectedEncounter.current_bed_id) && (
                   <div className="ai-drawer-proposal-banner">
                     <div className="ai-drawer-proposal-info">
                       <span className="ai-proposal-label">AI Recommended Bed:</span>
@@ -664,6 +686,35 @@ function EmergencyQueue({ onAssignBed }) {
                   Operational proposal only. Does not replace physician diagnosis.
                 </div>
               </div>
+            </div>
+
+            <div className="drawer-section">
+              <span className="drawer-label">COORDINATED WORKFLOW RESULT</span>
+              {!selectedWorkflow ? (
+                <>
+                  <p className="drawer-text">No coordinated workflow result is loaded. Run the workflow to see current resource matching and agent rationale.</p>
+                  <button type="button" className="btn btn-primary btn-sm" disabled={assignLoading && rowLoadingId === selectedEncounter.id} onClick={() => handleGenerateRecommendation(selectedEncounter)}>
+                    {assignLoading && rowLoadingId === selectedEncounter.id ? "Running agents..." : "Generate coordinated recommendation"}
+                  </button>
+                </>
+              ) : (
+                <div className="ai-support-box">
+                  <span className="status-pill status-reserved">{selectedWorkflow.workflow_status}</span>
+                  <p className="ai-support-body"><strong>Approval status:</strong> {selectedWorkflow.approval_status}</p>
+                  <p className="ai-support-body"><strong>Recommended department:</strong> {selectedRecommendation?.recommended_department || "Not specified"}</p>
+                  <p className="ai-support-body"><strong>Recommended bed:</strong> {selectedRecommendation?.recommended_bed_id || "No compatible bed recommended"}</p>
+                  <p className="ai-support-body"><strong>Triage rationale:</strong> {selectedRecommendation?.triage_rationale || selectedWorkflow.triage_result?.rationale || "Not available"}</p>
+                  <p className="ai-support-body"><strong>Patient-flow rationale:</strong> {selectedWorkflow.patient_flow_result?.rationale || selectedRecommendation?.patient_flow_action || "Not available"}</p>
+                  <p className="ai-support-body"><strong>Workforce rationale:</strong> {selectedWorkflow.workforce_assessment?.rationale || "No staffing rationale returned"}</p>
+                  {!!selectedRecommendation?.required_resources?.length && <p className="ai-support-body"><strong>Required resources:</strong> {selectedRecommendation.required_resources.join(", ")}</p>}
+                  {!!selectedRecommendation?.candidate_alternatives?.length && <p className="ai-support-body"><strong>Alternatives:</strong> {selectedRecommendation.candidate_alternatives.map((alternative) => alternative.target_bed_id || alternative.bed_id || alternative.description).filter(Boolean).join(", ")}</p>}
+                  {!!selectedWorkflow.warnings?.length && <p className="ai-support-body"><strong>Warnings:</strong> {selectedWorkflow.warnings.join("; ")}</p>}
+                  {selectedWorkflow.approval_status === "PENDING" && <p className="ai-support-body"><strong>Human review required:</strong> Review approval {selectedRecommendation?.approval_item_id || "in the Approvals panel"}.</p>}
+                  <button type="button" className="btn btn-outline btn-sm" disabled={assignLoading && rowLoadingId === selectedEncounter.id} onClick={() => handleGenerateRecommendation(selectedEncounter)}>
+                    {assignLoading && rowLoadingId === selectedEncounter.id ? "Refreshing..." : "Refresh recommendation"}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Bed Allocation Panel */}
