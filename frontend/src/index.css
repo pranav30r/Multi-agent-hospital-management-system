@@ -2695,3 +2695,226 @@ input:checked + .slider:before {
   transform: translateX(20px);
 }
 
+
+/* ─── Multi-Agent Escalation Toast Notifications ─────────────────────────── */
+.escalation-toast-container {
+  position: fixed;
+  top: 72px;
+  right: 24px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+}
+
+.escalation-toast-card {
+  pointer-events: auto;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-default, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  padding: 14px 16px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  animation: toastSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+@keyframes toastSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.escalation-toast-card.toast-critical {
+  border-left: 4px solid var(--color-danger, #ef4444);
+  background: linear-gradient(to right, rgba(239, 68, 68, 0.05), var(--bg-surface, #ffffff) 25%);
+}
+
+.escalation-toast-card.toast-urgent {
+  border-left: 4px solid var(--color-warning, #f59e0b);
+  background: linear-gradient(to right, rgba(245, 158, 11, 0.05), var(--bg-surface, #ffffff) 25%);
+}
+
+.toast-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.toast-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toast-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.toast-pulse-dot.pulse-critical {
+  background: var(--color-danger, #ef4444);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
+  animation: pulseCrit 1.5s infinite;
+}
+
+.toast-pulse-dot.pulse-urgent {
+  background: var(--color-warning, #f59e0b);
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+}
+
+@keyframes pulseCrit {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+  70% { transform: scale(1.1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.toast-category {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+}
+
+.toast-urgency-badge {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.urgency-immediate, .urgency-critical {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.urgency-urgent {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.toast-close-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted, #64748b);
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toast-close-btn:hover {
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--text-primary, #0f172a);
+}
+
+.toast-reason {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-primary, #1e293b);
+  margin: 0 0 8px 0;
+}
+
+.toast-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+
+.toast-meta-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-muted, #f8fafc);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.toast-time {
+  margin-left: auto;
+  font-family: var(--font-mono, monospace);
+}
+
+.toast-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-subtle, #e2e8f0);
+}
+
+.toast-btn-action {
+  background: transparent;
+  border: none;
+  color: var(--color-primary, #2563eb);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.toast-btn-action:hover {
+  text-decoration: underline;
+}
+
+/* ─── Real-Time Stream Status & Health Pill ──────────────────────────────── */
+.status-details-badge {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-left: 4px;
+}
+
+.health-pill-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.event-bus-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+}
+
+.event-bus-healthy {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.event-bus-degraded {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+.event-bus-unavailable {
+  background: #f8fafc;
+  color: #64748b;
+  border-color: #e2e8f0;
+}

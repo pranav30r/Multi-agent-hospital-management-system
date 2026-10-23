@@ -1,12 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getHealth } from '../api/dashboard.js';
 import { useEvents } from '../context/EventContext.jsx';
 import { useDemo } from '../context/DemoContext.jsx';
 import { Icon } from './common/Icon.jsx';
 
-function Header({ activeTab, onToggleMobile, onOpenCmdk }) {
+const HEALTH_POLL_INTERVAL_MS = 30000;
+
+function Header({ activeTab, onToggleMobile, onOpenCmdk, onSelectTab }) {
   const [time, setTime] = useState(new Date());
-  const [healthStatus, setHealthStatus] = useState(null);
+  const [healthData, setHealthData] = useState({
+    status: 'unknown',
+    redis: 'unknown',
+    database: 'unknown',
+  });
+  const [unreadEscalations, setUnreadEscalations] = useState(0);
   const { isConnected, status, reconnectAttempts, isPolling, reconnect } = useEvents();
   const { demoMode, toggleDemoMode } = useDemo();
 
@@ -17,10 +24,45 @@ function Header({ activeTab, onToggleMobile, onOpenCmdk }) {
     return () => clearInterval(timer);
   }, []);
 
+  const fetchHealth = useCallback(async () => {
+    try {
+      const data = await getHealth();
+      setHealthData({
+        status: data.status || 'unknown',
+        redis: data.redis || 'unknown',
+        database: data.database || 'unknown',
+      });
+    } catch {
+      // Missing or failed health probe must be recorded as unknown/unavailable, NEVER assumed healthy
+      setHealthData({
+        status: 'unknown',
+        redis: 'unknown',
+        database: 'unknown',
+      });
+    }
+  }, []);
+
   useEffect(() => {
-    getHealth()
-      .then((data) => setHealthStatus(data.status))
-      .catch(() => setHealthStatus('healthy'));
+    fetchHealth();
+    const pollTimer = setInterval(fetchHealth, HEALTH_POLL_INTERVAL_MS);
+    return () => clearInterval(pollTimer);
+  }, [fetchHealth]);
+
+  // Listen to escalation events to dynamically increment notification bell count
+  useEffect(() => {
+    const handleNewEscalation = () => {
+      setUnreadEscalations((prev) => prev + 1);
+    };
+    const handleAuthRefresh = () => {
+      // Re-aligned with server state
+    };
+
+    window.addEventListener('escalation:new', handleNewEscalation);
+    window.addEventListener('app:refresh-authoritative', handleAuthRefresh);
+    return () => {
+      window.removeEventListener('escalation:new', handleNewEscalation);
+      window.removeEventListener('app:refresh-authoritative', handleAuthRefresh);
+    };
   }, []);
 
   const tabTitles = {
@@ -38,6 +80,28 @@ function Header({ activeTab, onToggleMobile, onOpenCmdk }) {
     privacy: 'Privacy Policy',
     terms: 'Terms of Service',
   };
+
+  // Determine Event Stream / Redis health presentation
+  const isRedisOnline = healthData.redis === 'connected';
+  const isRedisDegraded = healthData.redis === 'unreachable';
+
+  const eventStreamLabel = isRedisOnline
+    ? 'Redis: Online'
+    : isRedisDegraded
+    ? 'Stream: Degraded (In-Memory Fallback)'
+    : 'Stream: Unknown';
+
+  const eventStreamClass = isRedisOnline
+    ? 'event-bus-healthy'
+    : isRedisDegraded
+    ? 'event-bus-degraded'
+    : 'event-bus-unavailable';
+
+  const eventStreamTitle = isRedisOnline
+    ? 'Distributed Redis Pub/Sub operational across all worker nodes.'
+    : isRedisDegraded
+    ? 'Redis unreachable. Multi-agent event delivery operating safely on local node in-memory fallback.'
+    : 'Backend event-stream health probe unreachable or response missing.';
 
   return (
     <header className="app-header-epic">
@@ -87,7 +151,7 @@ function Header({ activeTab, onToggleMobile, onOpenCmdk }) {
           <span className="demo-text">{demoMode ? 'Demo Data Active' : 'Load Demo Data'}</span>
         </button>
 
-        {/* Live Status Indicator */}
+        {/* Real-Time WebSocket Transport Indicator */}
         <div
           className={`live-status-pill ${
             isConnected
@@ -98,8 +162,8 @@ function Header({ activeTab, onToggleMobile, onOpenCmdk }) {
           }`}
           title={
             isConnected
-              ? 'Real-time WebSocket event bus active'
-              : `Connection status: ${status}. Fallback polling ${isPolling ? 'active (5s)' : 'inactive'}. Click to reconnect.`
+              ? 'Client WebSocket transport connected to server.'
+              : `Connection status: ${status}. Fallback REST polling ${isPolling ? 'active (5s)' : 'inactive'}. Click to reconnect.`
           }
         >
           <span
@@ -113,10 +177,10 @@ function Header({ activeTab, onToggleMobile, onOpenCmdk }) {
           />
           <span className="status-text">
             {isConnected
-              ? (healthStatus === 'healthy' ? 'Live Stream' : 'Live (Degraded)')
+              ? 'WebSocket: Live'
               : status === 'RECONNECTING'
               ? `Reconnecting (${reconnectAttempts})...`
-              : 'Offline (REST 5s)'}
+              : 'Disconnected (REST 5s)'}
           </span>
           {!isConnected && (
             <button
@@ -131,6 +195,17 @@ function Header({ activeTab, onToggleMobile, onOpenCmdk }) {
           )}
         </div>
 
+        {/* Backend Event Stream / Redis Health Signal */}
+        <div
+          className={`event-bus-indicator ${eventStreamClass}`}
+          title={eventStreamTitle}
+          role="status"
+          aria-label={eventStreamTitle}
+        >
+          <Icon name="activity" size={12} strokeWidth={2} />
+          <span>{eventStreamLabel}</span>
+        </div>
+
         {/* Digital Clock */}
         <div className="header-clock tabular-nums">
           <Icon name="clock" size={13} strokeWidth={1.5} className="text-muted" />
@@ -138,10 +213,22 @@ function Header({ activeTab, onToggleMobile, onOpenCmdk }) {
         </div>
 
         {/* Notification Bell */}
-        <div className="notification-bell-wrap" title="System alerts">
+        <button
+          type="button"
+          className="notification-bell-wrap"
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+          title={unreadEscalations > 0 ? `${unreadEscalations} new clinical escalation(s)` : 'No new notifications'}
+          aria-label="View clinical approvals and escalations"
+          onClick={() => {
+            setUnreadEscalations(0);
+            if (onSelectTab) onSelectTab('approvals');
+          }}
+        >
           <Icon name="bell" size={16} strokeWidth={1.5} />
-          <span className="bell-badge-count">3</span>
-        </div>
+          {unreadEscalations > 0 && (
+            <span className="bell-badge-count">{unreadEscalations > 9 ? '9+' : unreadEscalations}</span>
+          )}
+        </button>
       </div>
     </header>
   );

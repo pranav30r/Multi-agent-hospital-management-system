@@ -16,6 +16,7 @@ import TermsAndConditions from "./components/TermsAndConditions.jsx";
 import NotFound from "./components/NotFound.jsx";
 import Footer from "./components/Footer.jsx";
 import { CommandPalette } from "./components/CommandPalette.jsx";
+import EscalationToast from "./components/common/EscalationToast.jsx";
 
 // Admin Section Components
 import AdminDashboard from "./components/admin/AdminDashboard.jsx";
@@ -198,10 +199,12 @@ function Dashboard() {
       )}
 
       <div className="app-main-content">
+        <EscalationToast onNavigate={(tab) => setActiveTab(tab)} />
         <Header
           activeTab={activeTab}
           onToggleMobile={() => setMobileSidebarOpen((prev) => !prev)}
           onOpenCmdk={() => setCmdkOpen(true)}
+          onSelectTab={setActiveTab}
         />
 
         <main className="app-content-body">
