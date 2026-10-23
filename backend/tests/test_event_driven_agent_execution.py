@@ -287,8 +287,8 @@ async def test_concurrent_duplicate_events_for_same_encounter(test_db):
 
         await asyncio.gather(*[event_bus.publish(ev, tenant_id="HOSP-DEFAULT") for ev in events])
 
-        # Allow worker pool to process
-        await asyncio.sleep(0.8)
+        # Wait for all accepted events to finish processing instead of assuming a fixed runtime.
+        await asyncio.wait_for(listener._queue.join(), timeout=15)
 
         # Exactly 1 evaluation should succeed, remaining should be caught as in-flight or DB idempotency
         assert listener.stats["evaluations_triggered"] == 1
