@@ -93,7 +93,7 @@ function BedGrid() {
   }, [fetchData]);
 
   useEffect(() => {
-    if (lastEvent && ["BED_RESERVED", "BED_OCCUPIED", "BED_RELEASED", "SYSTEM_CONNECTED"].includes(lastEvent.event_type)) {
+    if (lastEvent && ["BED_RESERVED", "BED_OCCUPIED", "BED_RELEASED", "BED_UPDATED", "APPROVAL_DECIDED", "SYSTEM_CONNECTED"].includes(lastEvent.event_type)) {
       debouncedFetch();
     }
   }, [lastEvent, debouncedFetch]);

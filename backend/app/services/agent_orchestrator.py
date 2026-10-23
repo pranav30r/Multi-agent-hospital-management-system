@@ -59,7 +59,10 @@ class MultiAgentOrchestratorService:
         """
         # 1. Fetch Encounter with row lock
         enc_res = await self.db.execute(
-            select(Encounter).where(Encounter.id == encounter_id).with_for_update()
+            select(Encounter)
+            .join(Patient)
+            .where(Encounter.id == encounter_id, Patient.tenant_id == tenant_id)
+            .with_for_update()
         )
         encounter = enc_res.scalars().first()
         if not encounter:
