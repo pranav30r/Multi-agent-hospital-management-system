@@ -6,7 +6,8 @@ import { useDemo } from '../context/DemoContext.jsx';
 import { Icon } from './common/Icon.jsx';
 import { Drawer } from './common/Components.jsx';
 import { getAiRecommendedBed } from '../utils/aiAllocation.js';
-import { coordinateHospitalWorkflow } from '../api/intelligence.js';
+import { coordinateHospitalWorkflow, getWorkflowRecommendations } from '../api/intelligence.js';
+import { reviewApproval } from '../api/approvals.js';
 
 export { getAiRecommendedBed };
 
@@ -51,6 +52,13 @@ function EmergencyQueue({ onAssignBed }) {
     }
   };
 
+  const handleRejectAiBed = (enc) => {
+    setSelectedEncounter(enc);
+    setShowManualOverride(true);
+    setAssignError(`Choose an alternative bed for ${enc.patient_name || enc.patient_id}.`);
+    if (onAssignBed) onAssignBed(enc);
+  };
+
   const fetchEncounters = useCallback(async () => {
     if (demoMode) {
       setEncounters(demoData.patients);
@@ -61,6 +69,15 @@ function EmergencyQueue({ onAssignBed }) {
       setError(null);
       const data = await listActiveEncounters();
       setEncounters(data || []);
+      try {
+        const savedRecommendations = await getWorkflowRecommendations((data || []).map((encounter) => encounter.id));
+        setWorkflowResults((previous) => ({
+          ...previous,
+          ...Object.fromEntries(savedRecommendations.map((result) => [result.encounter_id, result]))
+        }));
+      } catch {
+        // Keep the encounter list usable if recommendation history is unavailable.
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -223,11 +240,76 @@ function EmergencyQueue({ onAssignBed }) {
     }
   };
 
-  const handleRejectAiBed = (enc) => {
-    setSelectedEncounter(enc);
-    setShowManualOverride(true);
-    setAssignError(`AI recommendation declined for ${enc.patient_name || enc.patient_id}. Select an alternative bed below.`);
-    if (onAssignBed) onAssignBed(enc);
+  const handleWorkflowDecision = async (enc, action) => {
+    const workflow = workflowResults[enc.id];
+    const recommendation = workflow?.recommendation;
+    const approvalId = recommendation?.approval_item_id;
+    const bedId = recommendation?.recommended_bed_id;
+    if (!approvalId || !bedId) {
+      setAssignError("This recommendation has no pending bed approval. Refresh the workflow or review the Approvals panel.");
+      return;
+    }
+
+    setAssignLoading(true);
+    setRowLoadingId(enc.id);
+    setAssignError(null);
+    setAssignSuccess(null);
+    try {
+      await reviewApproval(approvalId, action === "APPROVE"
+        ? { action }
+        : { action, rejection_reason: "Clinician declined the recommended bed allocation." });
+
+      if (action === "APPROVE") {
+        let bedStatus = "RESERVED";
+        let arrivalError = null;
+        try {
+          await confirmPatientInBed(bedId);
+          bedStatus = "OCCUPIED";
+        } catch (err) {
+          arrivalError = err.message || "Patient arrival could not be confirmed.";
+        }
+        setEncounters((previous) => previous.map((item) => item.id === enc.id
+          ? { ...item, assigned_bed_id: bedId, current_bed_id: bedId }
+          : item));
+        setBedsList((previous) => previous.map((bed) => bed.id === bedId
+          ? { ...bed, status: bedStatus, current_patient_id: enc.patient_id, current_encounter_id: enc.id }
+          : bed));
+        setWorkflowResults((previous) => ({
+          ...previous,
+          [enc.id]: { ...workflow, workflow_status: "ALLOCATED", approval_status: "APPROVED" }
+        }));
+        setAssignSuccess(bedStatus === "OCCUPIED"
+          ? `Bed ${bedId} approved and marked occupied.`
+          : `Bed ${bedId} approved and reserved.`);
+        setBannerNotice({
+          type: arrivalError ? "error" : "success",
+          message: arrivalError
+            ? `Bed ${bedId} was approved and reserved, but arrival confirmation failed: ${arrivalError}`
+            : `Bed ${bedId} approved and marked occupied.`,
+        });
+        if (arrivalError) setAssignError(`The recommendation was approved, but bed arrival confirmation failed: ${arrivalError}`);
+        window.dispatchEvent(new CustomEvent("bed:updated", {
+          detail: { bedId, status: bedStatus, patientId: enc.patient_id, encounterId: enc.id }
+        }));
+      } else {
+        setWorkflowResults((previous) => ({
+          ...previous,
+          [enc.id]: { ...workflow, workflow_status: "REJECTED", approval_status: "REJECTED" }
+        }));
+        setAssignSuccess(`Bed recommendation ${bedId} rejected; no bed was allocated.`);
+        setBannerNotice({ type: "success", message: `Bed recommendation ${bedId} rejected; no bed was allocated.` });
+      }
+
+      window.dispatchEvent(new CustomEvent("app:refresh-authoritative"));
+    } catch (err) {
+      setAssignError(err.message || `Failed to ${action.toLowerCase()} bed recommendation`);
+      setBannerNotice({ type: "error", message: err.message || `Failed to ${action.toLowerCase()} bed recommendation` });
+      window.dispatchEvent(new CustomEvent("app:refresh-authoritative"));
+    } finally {
+      setAssignLoading(false);
+      setRowLoadingId(null);
+      setTimeout(() => setBannerNotice(null), 5000);
+    }
   };
 
   const handleAssignBed = async (e) => {
@@ -343,7 +425,7 @@ function EmergencyQueue({ onAssignBed }) {
 
 
   useEffect(() => {
-    if (lastEvent && ['PATIENT_REGISTERED', 'ENCOUNTER_CREATED', 'PATIENT_INTAKE_COMPLETED', 'TRIAGE_UPDATED', 'BED_RESERVED', 'BED_OCCUPIED', 'BED_RELEASED', 'APPROVAL_DECIDED', 'EMERGENCY_DECLARED', 'EMERGENCY_ESCALATED', 'SYSTEM_CONNECTED'].includes(lastEvent.event_type)) {
+    if (lastEvent && ['PATIENT_REGISTERED', 'ENCOUNTER_CREATED', 'PATIENT_INTAKE_COMPLETED', 'TRIAGE_UPDATED', 'BED_RESERVED', 'BED_OCCUPIED', 'BED_RELEASED', 'APPROVAL_REQUIRED', 'APPROVAL_DECIDED', 'RECOMMENDATION_GENERATED', 'EMERGENCY_DECLARED', 'EMERGENCY_ESCALATED', 'SYSTEM_CONNECTED'].includes(lastEvent.event_type)) {
       debouncedFetch();
     }
   }, [lastEvent, debouncedFetch]);
@@ -550,6 +632,7 @@ function EmergencyQueue({ onAssignBed }) {
                         <Icon name="sparkles" size={13} className="text-primary" />
                         <div className="ai-rec-cell">
                           <span className="ai-rec-text">{workflow ? `${workflow.recommendation?.recommended_department || 'Department pending'}${proposedBed ? ` · Bed ${proposedBed}` : ''}` : 'No coordinated recommendation yet'}</span>
+                          {workflow && <span className="ai-target-tag">Doctor: <strong>{workflow.workforce_assessment?.assigned_doctor_id || 'Unavailable'}</strong>{workflow.workforce_assessment?.assigned_nurse_id ? ` · Nurse: ${workflow.workforce_assessment.assigned_nurse_id}` : ''}</span>}
                           {workflow && <span className="ai-target-tag">Status: <strong>{workflow.workflow_status}</strong></span>}
                         </div>
                       </div>
@@ -564,6 +647,19 @@ function EmergencyQueue({ onAssignBed }) {
                         >
                           🛏 {(enc.assigned_bed_id || enc.current_bed_id).replace("BED-", "")}
                         </button>
+                      ) : workflow?.recommendation?.recommended_bed_id && workflow.approval_status === "PENDING" ? (
+                        <div className="ai-decision-cell" style={{ minWidth: "150px" }}>
+                          <button type="button" className="btn btn-primary btn-sm" disabled={assignLoading && rowLoadingId === enc.id} onClick={() => handleWorkflowDecision(enc, "APPROVE")} title="Approve the recommendation and mark the bed occupied">
+                            {assignLoading && rowLoadingId === enc.id ? "Processing..." : "Accept & Occupy"}
+                          </button>
+                          <button type="button" className="btn btn-outline btn-sm" disabled={assignLoading && rowLoadingId === enc.id} onClick={() => handleWorkflowDecision(enc, "REJECT")} title="Reject without allocating the bed">
+                            Reject
+                          </button>
+                        </div>
+                      ) : workflow?.approval_status === "APPROVED" ? (
+                        <span className="status-pill status-occupied">OCCUPIED</span>
+                      ) : workflow?.approval_status === "REJECTED" ? (
+                        <span className="status-pill status-occupied">REJECTED</span>
                       ) : (
                         <div className="ai-decision-cell">
                           <button
@@ -580,9 +676,9 @@ function EmergencyQueue({ onAssignBed }) {
                             className="btn btn-outline btn-sm ai-btn-no"
                             disabled={assignLoading && rowLoadingId === enc.id}
                             onClick={() => handleRejectAiBed(enc)}
-                            title="Decline AI Bed / Choose Manually"
+                            title="Choose a different bed manually"
                           >
-                            ✕ No
+                            Manual
                           </button>
                         </div>
                       )}

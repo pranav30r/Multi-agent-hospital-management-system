@@ -217,7 +217,27 @@ class CoordinatorAgent(BaseAgent):
         requires_human_approval = risk_result.requires_human_approval
         confidence = risk_result.confidence
         reasoning = risk_result.reasoning
-        proposed_action = risk_result.proposed_action
+        proposed_action = dict(risk_result.proposed_action or {})
+
+        # Any recommendation that reserves an inpatient bed is consequential and
+        # must be explicitly reviewed, including routine/low-acuity placements.
+        target_bed_id = selected_plan.get("target_bed_id")
+        care_level = triage_output.get("recommended_care_level")
+        if target_bed_id and care_level != "OUTPATIENT":
+            requires_human_approval = True
+            if action_type not in ("ICU_BED_ALLOCATION_RECOMMENDATION",):
+                action_type = "BED_ALLOCATION_RECOMMENDATION"
+            proposed_action.update({
+                "action": "ALLOCATE_BED",
+                "target_bed_id": target_bed_id,
+                "target_department_id": selected_plan.get("target_department_id"),
+                "assigned_doctor_id": selected_plan.get("assigned_doctor_id"),
+                "assigned_nurse_id": selected_plan.get("assigned_nurse_id"),
+                "encounter_id": encounter.id,
+                "patient_id": patient.id,
+            })
+            if not risk_result.requires_human_approval:
+                reasoning = f"{reasoning} Inpatient bed allocation requires clinician approval before assignment."
 
         # 4. Persist Inter-Agent Messages (Full Provenance Traceability)
         messages_to_persist: List[AgentMessage] = [

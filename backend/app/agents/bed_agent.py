@@ -42,11 +42,13 @@ class BedManagerAgent(BaseAgent):
         requires_isolation = triage_output.get("requires_isolation", False)
         requires_telemetry = triage_output.get("requires_telemetry", False)
 
-        # Map care level to bed types
+        # Keep bed eligibility tied to the clinical destination; ER beds are not
+        # valid substitutes for a general ward merely because they are available.
+        care_level = str(care_level).upper()
         target_bed_types = {
-            "ICU": ["ICU", "CARDIAC_MONITOR"],
-            "EMERGENCY": ["EMERGENCY", "ICU", "GENERAL"],
-            "GENERAL": ["GENERAL", "EMERGENCY"],
+            "ICU": ["ICU"],
+            "EMERGENCY": ["EMERGENCY", "ICU", "CARDIAC_MONITOR"],
+            "GENERAL": ["GENERAL", "CARDIAC_MONITOR"] if requires_telemetry else ["GENERAL"],
             "OUTPATIENT": []
         }.get(care_level, ["GENERAL"])
 
@@ -77,6 +79,11 @@ class BedManagerAgent(BaseAgent):
         )
         res = await self.db.execute(query)
         available_beds: List[Bed] = res.scalars().all()
+
+        department_result = await self.db.execute(
+            select(Department.id, Department.code).where(Department.tenant_id == tenant_id)
+        )
+        department_codes = {department_id: code.upper() for department_id, code in department_result.all()}
 
         # Query total bed inventory for occupancy stats for this tenant
         total_res = await self.db.execute(
@@ -116,8 +123,30 @@ class BedManagerAgent(BaseAgent):
             for department_id, count in capacity_by_department.items()
         }
 
-        # Match optimal candidate beds
-        matching_beds = [b for b in available_beds if b.bed_type in target_bed_types]
+        # Rank appropriate units first and never use an ER bay as a routine ward bed.
+        department_preferences = {
+            "ICU": ["ICU"],
+            "EMERGENCY": ["ER", "ED", "EMERGENCY", "ICU", "CAR", "CARD"],
+            "GENERAL": ["WA", "WB", "GEN", "GENERAL", "WARD", "MED", "CAR", "CARD"],
+        }.get(care_level, [])
+        eligible_codes = set(department_preferences)
+        if care_level == "GENERAL" and not requires_telemetry:
+            eligible_codes -= {"CAR", "CARD"}
+
+        matching_beds = [
+            bed for bed in available_beds
+            if bed.bed_type.upper() in target_bed_types
+            and (
+                department_codes.get(bed.department_id, "") in eligible_codes
+                or bed.department_id.rsplit("-", 1)[-1].upper() in eligible_codes
+            )
+        ]
+        matching_beds.sort(key=lambda bed: (
+            department_preferences.index(department_codes.get(bed.department_id, bed.department_id.rsplit("-", 1)[-1].upper()))
+            if department_codes.get(bed.department_id, bed.department_id.rsplit("-", 1)[-1].upper()) in department_preferences
+            else len(department_preferences),
+            bed.id
+        ))
         if requires_isolation:
             matching_beds = [b for b in matching_beds if b.is_isolation]
 
