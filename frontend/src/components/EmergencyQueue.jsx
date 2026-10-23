@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { listActiveEncounters } from '../api/patients.js';
+import { listActiveEncounters, assignEncounterStaff } from '../api/patients.js';
+import { listStaff } from '../api/admin.js';
 import { listBeds, updateBedStatus, bookBedManual, confirmPatientInBed } from '../api/beds.js';
 import { useEvents } from '../context/EventContext.jsx';
 import { useDemo } from '../context/DemoContext.jsx';
@@ -31,15 +32,21 @@ function EmergencyQueue({ onAssignBed }) {
   const [allocationReason, setAllocationReason] = useState("Immediate triage admission");
   const [currentTime, setCurrentTime] = useState(0);
   const [workflowResults, setWorkflowResults] = useState({});
+  const [staffList, setStaffList] = useState([]);
+  const [manualDoctorId, setManualDoctorId] = useState('');
+  const [manualNurseId, setManualNurseId] = useState('');
 
-  const handleGenerateRecommendation = async (enc) => {
+  const handleGenerateRecommendation = async (enc, forceRecalculate = false) => {
     setAssignLoading(true);
     setRowLoadingId(enc.id);
     setAssignError(null);
     setAssignSuccess(null);
     try {
       if (demoMode) throw new Error("Live workflow recommendations are unavailable in demo mode.");
-      const result = await coordinateHospitalWorkflow(enc.id, { trigger_reason: "FRONTEND_REQUEST" });
+      const result = await coordinateHospitalWorkflow(enc.id, {
+        trigger_reason: forceRecalculate ? "STAFF_REQUESTED_REFRESH" : "FRONTEND_REQUEST",
+        force_recalculate: forceRecalculate,
+      });
       setWorkflowResults((previous) => ({ ...previous, [enc.id]: result }));
       setAssignSuccess("Coordinated recommendation generated. Review its status and rationale.");
       setSelectedEncounter(enc);
@@ -68,9 +75,22 @@ function EmergencyQueue({ onAssignBed }) {
     try {
       setError(null);
       const data = await listActiveEncounters();
-      setEncounters(data || []);
+      const normalizedEncounters = (data || []).map((encounter) => ({
+        ...encounter,
+        initial_vitals: {
+          ...(encounter.initial_vitals || encounter.vitals || {}),
+          heart_rate: encounter.heart_rate ?? encounter.initial_vitals?.heart_rate ?? encounter.vitals?.heart_rate,
+          spo2: encounter.spo2 ?? encounter.initial_vitals?.spo2 ?? encounter.vitals?.spo2,
+          bp_systolic: encounter.bp_systolic ?? encounter.initial_vitals?.bp_systolic ?? encounter.vitals?.bp_systolic,
+          bp_diastolic: encounter.bp_diastolic ?? encounter.initial_vitals?.bp_diastolic ?? encounter.vitals?.bp_diastolic,
+          temperature_f: encounter.temperature_f ?? encounter.initial_vitals?.temperature_f ?? encounter.vitals?.temperature_f,
+          respiratory_rate: encounter.respiratory_rate ?? encounter.initial_vitals?.respiratory_rate ?? encounter.vitals?.respiratory_rate,
+          gcs_score: encounter.gcs_score ?? encounter.initial_vitals?.gcs_score ?? encounter.vitals?.gcs_score,
+        },
+      }));
+      setEncounters(normalizedEncounters);
       try {
-        const savedRecommendations = await getWorkflowRecommendations((data || []).map((encounter) => encounter.id));
+        const savedRecommendations = await getWorkflowRecommendations(normalizedEncounters.map((encounter) => encounter.id));
         setWorkflowResults((previous) => ({
           ...previous,
           ...Object.fromEntries(savedRecommendations.map((result) => [result.encounter_id, result]))
@@ -105,25 +125,63 @@ function EmergencyQueue({ onAssignBed }) {
     ]));
   }, []);
 
+  const fetchStaff = useCallback(async () => {
+    if (demoMode) return;
+    try {
+      setStaffList(await listStaff());
+    } catch {
+      setStaffList([]);
+    }
+  }, [demoMode]);
+
   const debounceTimerRef = useRef(null);
   const debouncedFetch = useCallback(() => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       fetchEncounters();
       fetchBeds();
+      fetchStaff();
     }, 200);
-  }, [fetchEncounters, fetchBeds]);
+  }, [fetchEncounters, fetchBeds, fetchStaff]);
 
   useEffect(() => {
     fetchEncounters();
     fetchBeds();
+    fetchStaff();
     setCurrentTime(Date.now());
     const timer = setInterval(() => setCurrentTime(Date.now()), 30000);
     return () => {
       clearInterval(timer);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [fetchEncounters, fetchBeds]);
+  }, [fetchEncounters, fetchBeds, fetchStaff]);
+
+  const handleManualStaffAssignment = async (encounter) => {
+    if (!encounter || (!manualDoctorId && !manualNurseId)) return;
+    setAssignLoading(true);
+    setAssignError(null);
+    try {
+      await assignEncounterStaff(encounter.id, {
+        doctor_id: manualDoctorId || null,
+        nurse_id: manualNurseId || null,
+      });
+      setEncounters((previous) => previous.map((item) => item.id === encounter.id
+        ? { ...item, assigned_doctor_id: manualDoctorId || item.assigned_doctor_id, assigned_nurse_id: manualNurseId || item.assigned_nurse_id }
+        : item));
+      setSelectedEncounter((previous) => previous?.id === encounter.id
+        ? { ...previous, assigned_doctor_id: manualDoctorId || previous.assigned_doctor_id, assigned_nurse_id: manualNurseId || previous.assigned_nurse_id }
+        : previous);
+      setAssignSuccess('Clinician assignment saved. Those clinicians are now reserved for this active patient.');
+      setManualDoctorId('');
+      setManualNurseId('');
+      fetchStaff();
+      window.dispatchEvent(new CustomEvent('app:refresh-authoritative'));
+    } catch (err) {
+      setAssignError(err.message || 'Could not manually assign clinicians');
+    } finally {
+      setAssignLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (selectedEncounter) {
@@ -443,7 +501,7 @@ function EmergencyQueue({ onAssignBed }) {
   }, [debouncedFetch]);
 
   const filtered = encounters.filter((enc) => {
-    const score = enc.triage_score || enc.esi_level || 3;
+    const score = workflowResults[enc.id]?.triage_result?.esi_level || enc.triage_score || enc.esi_level || 3;
     const matchesEsi = filterEsi === 'ALL' || String(score) === filterEsi;
     const hay = `${enc.patient_id} ${enc.patient_name || ''} ${enc.chief_complaint || ''}`.toLowerCase();
     const matchesSearch = hay.includes(search.toLowerCase().trim());
@@ -582,7 +640,7 @@ function EmergencyQueue({ onAssignBed }) {
             </thead>
             <tbody>
               {filtered.map((enc) => {
-                const esi = enc.triage_score || enc.esi_level || 3;
+                const esi = workflowResults[enc.id]?.triage_result?.esi_level || enc.triage_score || enc.esi_level || 3;
                 const vitals = enc.initial_vitals || enc.vitals || {};
                 const hr = enc.heart_rate || vitals.heart_rate || '—';
                 const spo2 = enc.spo2 || vitals.spo2 || '—';
@@ -702,12 +760,24 @@ function EmergencyQueue({ onAssignBed }) {
           const selectedProposedBed = proposedBedsMap[selectedEncounter.id] || getAiRecommendedBed(selectedEncounter, bedsList);
           const selectedWorkflow = workflowResults[selectedEncounter.id];
           const selectedRecommendation = selectedWorkflow?.recommendation;
+          const assignedElsewhere = new Set(encounters
+            .filter((item) => item.id !== selectedEncounter.id)
+            .flatMap((item) => [item.assigned_doctor_id, item.assigned_nurse_id])
+            .filter(Boolean));
+          const availableDoctors = staffList.filter((staff) => staff.role === 'DOCTOR'
+            && staff.status === 'AVAILABLE' && staff.current_workload < staff.max_workload
+            && (!assignedElsewhere.has(staff.id) || staff.id === selectedEncounter.assigned_doctor_id));
+          const availableNurses = staffList.filter((staff) => ['NURSE', 'CHARGE_NURSE'].includes(staff.role)
+            && staff.status === 'AVAILABLE' && staff.current_workload < staff.max_workload
+            && (!assignedElsewhere.has(staff.id) || staff.id === selectedEncounter.assigned_nurse_id));
+          const busyClinicians = staffList.filter((staff) => assignedElsewhere.has(staff.id)
+            || staff.status !== 'AVAILABLE' || staff.current_workload >= staff.max_workload);
           return (
           <div className="patient-drawer-content">
             <div className="drawer-section">
               <span className="drawer-label">TRIAGE ASSESSMENT</span>
-              <div className={`esi-banner ${getEsiBadgeClass(selectedEncounter.triage_score || selectedEncounter.esi_level || 3)}`}>
-                <span className="esi-banner-title">{getEsiLabel(selectedEncounter.triage_score || selectedEncounter.esi_level || 3)}</span>
+              <div className={`esi-banner ${getEsiBadgeClass(selectedWorkflow?.triage_result?.esi_level || selectedEncounter.triage_score || selectedEncounter.esi_level || 3)}`}>
+                <span className="esi-banner-title">{getEsiLabel(selectedWorkflow?.triage_result?.esi_level || selectedEncounter.triage_score || selectedEncounter.esi_level || 3)}</span>
                 <span className="esi-banner-desc">Physiologic stability requiring continuous hemodynamic observation</span>
               </div>
             </div>
@@ -806,12 +876,44 @@ function EmergencyQueue({ onAssignBed }) {
                   {!!selectedRecommendation?.candidate_alternatives?.length && <p className="ai-support-body"><strong>Alternatives:</strong> {selectedRecommendation.candidate_alternatives.map((alternative) => alternative.target_bed_id || alternative.bed_id || alternative.description).filter(Boolean).join(", ")}</p>}
                   {!!selectedWorkflow.warnings?.length && <p className="ai-support-body"><strong>Warnings:</strong> {selectedWorkflow.warnings.join("; ")}</p>}
                   {selectedWorkflow.approval_status === "PENDING" && <p className="ai-support-body"><strong>Human review required:</strong> Review approval {selectedRecommendation?.approval_item_id || "in the Approvals panel"}.</p>}
-                  <button type="button" className="btn btn-outline btn-sm" disabled={assignLoading && rowLoadingId === selectedEncounter.id} onClick={() => handleGenerateRecommendation(selectedEncounter)}>
+                  <button type="button" className="btn btn-outline btn-sm" disabled={assignLoading && rowLoadingId === selectedEncounter.id} onClick={() => handleGenerateRecommendation(selectedEncounter, true)}>
                     {assignLoading && rowLoadingId === selectedEncounter.id ? "Refreshing..." : "Refresh recommendation"}
                   </button>
                 </div>
               )}
             </div>
+
+            {!demoMode && (
+              <div className="drawer-section">
+                <span className="drawer-label">MANUAL CLINICIAN ASSIGNMENT</span>
+                <p className="drawer-text">
+                  AI suggestions use clinicians not already assigned to another active patient. Busy clinicians become selectable again after their assignment is cleared.
+                </p>
+                {busyClinicians.length > 0 && <p className="drawer-text"><strong>Busy / unavailable:</strong> {busyClinicians.map((staff) => `${staff.first_name} ${staff.last_name} (${staff.id})`).join(', ')}. They can be assigned again when their active case is completed or released.</p>}
+                <div className="form-grid">
+                  <label>
+                    Doctor
+                    <select value={manualDoctorId} onChange={(event) => setManualDoctorId(event.target.value)}>
+                      <option value="">Select available doctor</option>
+                      {availableDoctors.map((staff) => <option key={staff.id} value={staff.id}>{staff.first_name} {staff.last_name} ({staff.id})</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Nurse
+                    <select value={manualNurseId} onChange={(event) => setManualNurseId(event.target.value)}>
+                      <option value="">Select available nurse</option>
+                      {availableNurses.map((staff) => <option key={staff.id} value={staff.id}>{staff.first_name} {staff.last_name} ({staff.id})</option>)}
+                    </select>
+                  </label>
+                </div>
+                {availableDoctors.length === 0 || availableNurses.length === 0
+                  ? <p className="drawer-text">{availableDoctors.length === 0 ? 'No unassigned doctor is currently available. ' : ''}{availableNurses.length === 0 ? 'No unassigned nurse is currently available.' : ''} Review the roster or wait for an active assignment to be released.</p>
+                  : null}
+                <button type="button" className="btn btn-outline btn-sm" disabled={assignLoading || (!manualDoctorId && !manualNurseId)} onClick={() => handleManualStaffAssignment(selectedEncounter)}>
+                  {assignLoading ? 'Saving...' : 'Save manual clinician assignment'}
+                </button>
+              </div>
+            )}
 
             {/* Bed Allocation Panel */}
             <div className="drawer-section drawer-bed-section">

@@ -2,12 +2,13 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from fastapi import HTTPException
-from sqlalchemy import select, desc, and_
+from sqlalchemy import select, desc, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.patient import Patient, Encounter
 from app.models.department import Department
 from app.models.agent import AuditLog
+from app.models.staff import Staff
 from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
@@ -293,6 +294,19 @@ class EncounterService:
         if status_clean == "COMPLETED":
             encounter.discharge_time = utc_now()
             encounter.patient_status = "DISCHARGED"
+        if status_clean in ["COMPLETED", "CANCELLED"]:
+            for staff_id in {encounter.assigned_doctor_id, encounter.assigned_nurse_id} - {None}:
+                staff_result = await self.db.execute(select(Staff).where(Staff.id == staff_id).with_for_update())
+                staff_member = staff_result.scalars().first()
+                other_assignment = await self.db.execute(
+                    select(Encounter.id).where(
+                        Encounter.status == "ACTIVE",
+                        Encounter.id != encounter.id,
+                        or_(Encounter.assigned_doctor_id == staff_id, Encounter.assigned_nurse_id == staff_id),
+                    )
+                )
+                if staff_member and staff_member.status == "BUSY" and not other_assignment.first():
+                    staff_member.status = "AVAILABLE"
 
         audit = AuditLog(
             entity_type="encounter",

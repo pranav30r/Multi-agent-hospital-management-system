@@ -45,9 +45,17 @@ class TriageAgent(BaseAgent):
         score = float(assessment.score or 0.0)
         red_flags = assessment.red_flags or []
         priority_level = priority_rec.priority_level or "ROUTINE"
+        critical_flag_codes = {
+            "RF_CRITICAL_HYPOXIA", "RF_HYPOTENSION", "RF_SEVERE_BRADYCARDIA",
+            "RF_SEVERE_TACHYPNEA", "RF_SEVERE_BRADYPNEA", "RF_ALTERED_GCS",
+            "RF_ACUTE_HEMORRHAGE", "RF_ANAPHYLACTIC_SUSPICION",
+        }
+        has_critical_flag = any(flag.get("code") in critical_flag_codes for flag in red_flags)
 
         # Derive ESI level from encounter or priority_level
-        if encounter.esi_level:
+        if has_critical_flag:
+            esi_level = 1
+        elif encounter.esi_level:
             esi_level = encounter.esi_level
         elif priority_level == "CRITICAL":
             esi_level = 1

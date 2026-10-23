@@ -36,9 +36,16 @@ class EncounterCreate(BaseModel):
     respiratory_rate: Optional[int] = Field(None, ge=5, le=60)
     gcs_score: Optional[int] = Field(None, ge=3, le=15)
 
+class EncounterStaffAssignment(BaseModel):
+    doctor_id: Optional[str] = None
+    nurse_id: Optional[str] = None
+
 class EncounterResponse(BaseModel):
     id: str
     patient_id: str
+    patient_name: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
     encounter_type: str
     status: str
     current_department_id: str
@@ -55,6 +62,8 @@ class EncounterResponse(BaseModel):
     spo2: Optional[int] = None
     temperature_f: Optional[float] = None
     pain_level: Optional[int] = None
+    respiratory_rate: Optional[int] = None
+    gcs_score: Optional[int] = None
     arrival_time: datetime
 
     model_config = ConfigDict(from_attributes=True)

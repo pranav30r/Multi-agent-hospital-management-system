@@ -9,7 +9,8 @@ from typing import Dict, Any, List
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.patient import Encounter
+from app.models.patient import Encounter, Patient
+from app.models.agent import ApprovalItem, AgentDecision
 from app.models.staff import Staff
 from app.utils.datetime_utils import utc_now_iso
 from app.agents.base import BaseAgent
@@ -43,14 +44,47 @@ class StaffSchedulerAgent(BaseAgent):
         staff_query = select(Staff).where(
             and_(
                 Staff.tenant_id == tenant_id,
-                Staff.status.in_(["AVAILABLE", "BUSY"])
+                Staff.status == "AVAILABLE"
             )
         )
         res = await self.db.execute(staff_query)
         all_staff: List[Staff] = res.scalars().all()
 
-        doctors = [s for s in all_staff if s.role == "DOCTOR" and s.current_workload < s.max_workload]
-        nurses = [s for s in all_staff if s.role in ["NURSE", "CHARGE_NURSE"] and s.current_workload < s.max_workload]
+        assigned_result = await self.db.execute(
+            select(Encounter.assigned_doctor_id, Encounter.assigned_nurse_id)
+            .join(Patient, Encounter.patient_id == Patient.id)
+            .where(
+                Patient.tenant_id == tenant_id,
+                Encounter.status == "ACTIVE",
+                Encounter.id != encounter.id,
+            )
+        )
+        occupied_staff_ids = {
+            staff_id
+            for assignment in assigned_result.all()
+            for staff_id in assignment
+            if staff_id
+        }
+        pending_result = await self.db.execute(
+            select(ApprovalItem.proposed_action)
+            .join(AgentDecision, ApprovalItem.decision_id == AgentDecision.id)
+            .where(
+                ApprovalItem.tenant_id == tenant_id,
+                ApprovalItem.status == "PENDING",
+                AgentDecision.encounter_id != encounter.id,
+            )
+        )
+        for proposed_action in pending_result.scalars().all():
+            if isinstance(proposed_action, dict):
+                occupied_staff_ids.update(
+                    staff_id for staff_id in (
+                        proposed_action.get("assigned_doctor_id"),
+                        proposed_action.get("assigned_nurse_id"),
+                    ) if staff_id
+                )
+
+        doctors = [s for s in all_staff if s.role == "DOCTOR" and s.current_workload < s.max_workload and s.id not in occupied_staff_ids]
+        nurses = [s for s in all_staff if s.role in ["NURSE", "CHARGE_NURSE"] and s.current_workload < s.max_workload and s.id not in occupied_staff_ids]
 
         # Prefer staff in the receiving department, then use the least-loaded
         # available hospital-wide clinician when that unit has no local coverage.
@@ -83,7 +117,7 @@ class StaffSchedulerAgent(BaseAgent):
                 )
         else:
             feasibility = "CRITICAL_SHORTAGE"
-            rationale = "Critical clinical staff shortage: No on-duty doctor or nurse available for assignment."
+            rationale = "No unassigned on-duty doctor or nurse is available; existing active patient assignments and workload limits are respected. Assign manually when an eligible clinician is free."
 
         return {
             "agent_id": "staff_scheduler_agent",
@@ -110,7 +144,7 @@ class StaffSchedulerAgent(BaseAgent):
         query = select(Staff).where(
             and_(
                 Staff.tenant_id == tenant_id,
-                Staff.status.in_(["AVAILABLE", "BUSY"])
+                Staff.status == "AVAILABLE"
             )
         ).order_by(Staff.current_workload.asc())
         res = await self.db.execute(query)

@@ -1,12 +1,14 @@
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
+from app.models.patient import Patient
 from app.auth.dependencies import require_roles, get_current_staff, get_current_tenant
-from app.schemas.patient import PatientCreate, PatientResponse, EncounterCreate, EncounterResponse
+from app.schemas.patient import PatientCreate, PatientResponse, EncounterCreate, EncounterResponse, EncounterStaffAssignment
 from app.services.patient_service import PatientService
 from app.services.encounter_service import EncounterService
 
@@ -133,7 +135,24 @@ async def list_active_encounters(
 ):
     """List all active hospital encounters scoped to the authenticated tenant."""
     service = EncounterService(db)
-    return await service.list_active_encounters(tenant_id=tenant_id, skip=skip, limit=limit)
+    encounters = await service.list_active_encounters(tenant_id=tenant_id, skip=skip, limit=limit)
+    patient_ids = {encounter.patient_id for encounter in encounters}
+    patients_result = await db.execute(
+        select(Patient).where(Patient.id.in_(patient_ids), Patient.tenant_id == tenant_id)
+    ) if patient_ids else None
+    patients = {patient.id: patient for patient in patients_result.scalars().all()} if patients_result else {}
+    response = []
+    for encounter in encounters:
+        item = EncounterResponse.model_validate(encounter).model_dump()
+        patient = patients.get(encounter.patient_id)
+        if patient:
+            item.update({
+                "patient_name": f"{patient.first_name} {patient.last_name}".strip(),
+                "age": patient.age,
+                "gender": patient.gender,
+            })
+        response.append(item)
+    return response
 
 
 @router.get("/encounters/{encounter_id}", response_model=EncounterResponse)
@@ -148,4 +167,51 @@ async def get_encounter(
     encounter = await service.get_encounter_by_id(encounter_id, tenant_id=tenant_id)
     if not encounter:
         raise HTTPException(status_code=404, detail=f"Encounter {encounter_id} not found")
+    return encounter
+
+
+@router.patch("/encounters/{encounter_id}/staff", response_model=EncounterResponse)
+async def assign_encounter_staff(
+    encounter_id: str,
+    assignment: EncounterStaffAssignment,
+    tenant_id: str = Depends(get_current_tenant),
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "NURSE", "CHARGE_NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Manually assign currently available, unassigned clinicians to an active encounter."""
+    service = EncounterService(db)
+    encounter = await service.get_encounter_by_id(encounter_id, tenant_id=tenant_id)
+    if not encounter or encounter.status != "ACTIVE":
+        raise HTTPException(status_code=404, detail="Active encounter not found")
+
+    choices = ((assignment.doctor_id, {"DOCTOR"}, "assigned_doctor_id"),
+               (assignment.nurse_id, {"NURSE", "CHARGE_NURSE"}, "assigned_nurse_id"))
+    for staff_id, roles, field in choices:
+        if staff_id is None:
+            continue
+        staff_result = await db.execute(
+            select(Staff).where(Staff.id == staff_id, Staff.tenant_id == tenant_id).with_for_update()
+        )
+        staff_member = staff_result.scalars().first()
+        if not staff_member or staff_member.role not in roles:
+            raise HTTPException(status_code=400, detail=f"{staff_id} is not an eligible {field.removeprefix('assigned_')}")
+        if staff_member.status != "AVAILABLE" or staff_member.current_workload >= staff_member.max_workload:
+            raise HTTPException(status_code=409, detail=f"{staff_id} is busy or at workload capacity")
+        conflict_result = await db.execute(
+            select(Encounter.id)
+            .join(Patient, Encounter.patient_id == Patient.id)
+            .where(
+                Patient.tenant_id == tenant_id,
+                Encounter.status == "ACTIVE",
+                Encounter.id != encounter.id,
+                getattr(Encounter, field) == staff_id,
+            )
+        )
+        if conflict_result.first():
+            raise HTTPException(status_code=409, detail=f"{staff_id} is already assigned to another active patient")
+        setattr(encounter, field, staff_id)
+        staff_member.status = "BUSY"
+
+    await db.commit()
+    await db.refresh(encounter)
     return encounter

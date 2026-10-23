@@ -9,6 +9,7 @@ from app.models.agent import ApprovalItem, AgentDecision, AuditLog
 from app.models.bed import Bed, BedAssignment
 from app.models.department import Department
 from app.models.patient import Patient, Encounter
+from app.models.staff import Staff
 from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
@@ -332,11 +333,43 @@ class ApprovalService:
 
         # 3. Check bed compatibility if specified (e.g. ICU requirement)
         required_bed_type = effective_payload.get("bed_type")
-        if required_bed_type and str(required_bed_type).upper() == "ICU" and bed.bed_type not in ["ICU", "CARDIAC_MONITOR"]:
+        if required_bed_type and str(required_bed_type).upper() == "ICU" and bed.bed_type not in ["ICU", "ICU_VENTILATOR", "CARDIAC_MONITOR"]:
             raise HTTPException(
                 status_code=400,
                 detail=f"Bed {target_bed_id} type '{bed.bed_type}' is incompatible with required ICU level of care"
             )
+
+        assigned_staff = []
+        staff_choices = (
+            (effective_payload.get("assigned_doctor_id"), {"DOCTOR"}, "doctor"),
+            (effective_payload.get("assigned_nurse_id"), {"NURSE", "CHARGE_NURSE"}, "nurse"),
+        )
+        for staff_id, expected_roles, role_name in staff_choices:
+            if not staff_id:
+                continue
+            staff_query = select(Staff).where(Staff.id == staff_id)
+            if tenant_id:
+                staff_query = staff_query.where(Staff.tenant_id == tenant_id)
+            staff_result = await self.db.execute(staff_query.with_for_update())
+            staff_member = staff_result.scalars().first()
+            if not staff_member or staff_member.role not in expected_roles:
+                raise HTTPException(status_code=400, detail=f"{staff_id} is not an eligible {role_name}")
+            if staff_member.status != "AVAILABLE" or staff_member.current_workload >= staff_member.max_workload:
+                if getattr(encounter, f"assigned_{role_name}_id") != staff_id:
+                    raise HTTPException(status_code=409, detail=f"{staff_id} is busy or at workload capacity")
+            conflict_result = await self.db.execute(
+                select(Encounter.id)
+                .join(Patient, Encounter.patient_id == Patient.id)
+                .where(
+                    Patient.tenant_id == (tenant_id or staff_member.tenant_id),
+                    Encounter.status == "ACTIVE",
+                    Encounter.id != encounter.id,
+                    getattr(Encounter, f"assigned_{role_name}_id") == staff_id,
+                )
+            )
+            if conflict_result.first():
+                raise HTTPException(status_code=409, detail=f"{staff_id} is already assigned to another active patient")
+            assigned_staff.append(staff_member)
 
         # 4. Apply State Mutation on Bed with atomic CAS check
         old_bed_status = bed.status
@@ -367,6 +400,8 @@ class ApprovalService:
             encounter.assigned_doctor_id = effective_payload["assigned_doctor_id"]
         if effective_payload.get("assigned_nurse_id"):
             encounter.assigned_nurse_id = effective_payload["assigned_nurse_id"]
+        for staff_member in assigned_staff:
+            staff_member.status = "BUSY"
 
         # 6. Record BedAssignment
         assignment = BedAssignment(
