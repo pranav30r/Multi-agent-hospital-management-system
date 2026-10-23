@@ -8,8 +8,8 @@ logger = logging.getLogger(__name__)
 # Keywords for high-risk clinical symptom pattern matching
 CHEST_KEYWORDS = ["chest pain", "chest pressure", "chest tightness", "angina", "cardiac"]
 RESPIRATORY_KEYWORDS = ["shortness of breath", "difficulty breathing", "dyspnea", "wheezing", "cannot breathe", "gasping", "breathlessness"]
-NEURO_KEYWORDS = ["sudden weakness", "facial drooping", "slurred speech", "numbness", "paralysis", "seizure", "convulsion", "unresponsive", "fainting", "syncope"]
-BLEEDING_KEYWORDS = ["severe bleeding", "coughing blood", "hemoptysis", "vomiting blood", "hematemesis", "active hemorrhage", "blood in stool"]
+NEURO_KEYWORDS = ["sudden weakness", "facial drooping", "slurred speech", "numbness", "paralysis", "seizure", "convulsion", "unresponsive", "unconscious", "not conscious", "fainting", "syncope"]
+BLEEDING_KEYWORDS = ["severe bleeding", "heavy blood loss", "heavy bleeding", "blood loss", "coughing blood", "hemoptysis", "vomiting blood", "hematemesis", "active hemorrhage", "blood in stool"]
 ANAPHYLAXIS_KEYWORDS = ["throat swelling", "swollen tongue", "anaphylaxis", "lip swelling", "cannot swallow"]
 
 

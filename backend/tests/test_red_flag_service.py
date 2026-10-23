@@ -64,6 +64,18 @@ def test_red_flag_detection_normal_and_moderate():
     assert "RF_MILD_GCS_DECREASE" in codes_mod
 
 
+def test_heavy_blood_loss_and_unconsciousness_are_red_flags():
+    rf_service = RedFlagService()
+    flags = rf_service.detect_red_flags(
+        encounter_vitals={},
+        chief_complaint="Accident with heavy blood loss; patient unconscious",
+    )
+    codes = {flag["code"] for flag in flags}
+
+    assert "RF_ACUTE_HEMORRHAGE" in codes
+    assert "RF_ACUTE_NEUROLOGICAL_DEFICIT" in codes
+
+
 def test_red_flag_symptoms_and_pain():
     """Test detection of high-risk symptoms and high pain scores."""
     rf_service = RedFlagService()

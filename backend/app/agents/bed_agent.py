@@ -46,9 +46,9 @@ class BedManagerAgent(BaseAgent):
         # valid substitutes for a general ward merely because they are available.
         care_level = str(care_level).upper()
         target_bed_types = {
-            "ICU": ["ICU"],
-            "EMERGENCY": ["EMERGENCY", "ICU", "CARDIAC_MONITOR"],
-            "GENERAL": ["GENERAL", "CARDIAC_MONITOR"] if requires_telemetry else ["GENERAL"],
+            "ICU": ["ICU", "ICU_VENTILATOR"],
+            "EMERGENCY": ["EMERGENCY", "EMERGENCY_BAY", "ICU", "ICU_VENTILATOR", "CARDIAC_MONITOR"],
+            "GENERAL": ["GENERAL", "STANDARD_INPATIENT", "CARDIAC_MONITOR"] if requires_telemetry else ["GENERAL", "STANDARD_INPATIENT"],
             "OUTPATIENT": []
         }.get(care_level, ["GENERAL"])
 
@@ -151,7 +151,7 @@ class BedManagerAgent(BaseAgent):
             matching_beds = [b for b in matching_beds if b.is_isolation]
 
         if requires_telemetry:
-            matching_beds = [b for b in matching_beds if b.has_telemetry or b.bed_type == "ICU"]
+            matching_beds = [b for b in matching_beds if b.has_telemetry or b.bed_type.upper() in ["ICU", "ICU_VENTILATOR"]]
 
         equipment_ready = True
         if triage_output.get("requires_ventilator"):
