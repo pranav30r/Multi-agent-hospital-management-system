@@ -610,9 +610,29 @@ class HospitalWorkflowCoordinator:
                     "recommended_bed_id": resource_match_result.recommended_bed_id,
                     "target_department": patient_flow_result.target_department,
                     "approval_item_id": approval_item_id,
-                    "requires_human_approval": approval_required
+                    "requires_human_approval": approval_required,
+                    "urgency": escalation_result.urgency or "ROUTINE",
+                    "emergency_level": escalation_result.emergency_level or "STANDARD_MONITORING",
+                    "escalation_required": bool(escalation_result.escalation_required)
                 }
             }, tenant_id=enc_tenant)
+
+            if escalation_result.escalation_required:
+                await event_bus.publish({
+                    "event_type": "EMERGENCY_ESCALATED",
+                    "tenant_id": enc_tenant,
+                    "source": "emergency_escalation_agent",
+                    "payload": {
+                        "encounter_id": encounter.id,
+                        "patient_id": patient.id,
+                        "workflow_id": workflow_id,
+                        "urgency": escalation_result.urgency or "URGENT",
+                        "emergency_level": escalation_result.emergency_level or "STANDARD_MONITORING",
+                        "reasons": escalation_result.escalation_reasons or [],
+                        "required_actions": escalation_result.required_human_actions or [],
+                        "approval_item_id": approval_item_id
+                    }
+                }, tenant_id=enc_tenant)
         except Exception as ev_err:
             logger.debug(f"Event bus broadcast note: {ev_err}")
 
