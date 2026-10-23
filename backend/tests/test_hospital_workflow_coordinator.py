@@ -40,6 +40,9 @@ from app.schemas.hospital_workflow import (
     ConsolidatedRecommendation
 )
 from app.services.approval_service import ApprovalService
+from app.agents.bed_agent import BedManagerAgent
+from app.agents.staff_agent import StaffSchedulerAgent
+from app.models.staff import Staff
 
 
 async def seed_workflow_env(session):
@@ -451,3 +454,82 @@ async def test_10_human_approval_triggers_atomic_reservation_pipeline(test_db):
         audit = audit_res.scalars().first()
         assert audit is not None
         assert audit.changed_by == "DOC-APPROVER"
+
+
+@pytest.mark.asyncio
+async def test_bed_matching_routes_to_unit_by_care_level(test_db):
+    async with test_db() as session:
+        env = await seed_workflow_env(session)
+        encounter = await session.get(Encounter, env["enc_rout"])
+        agent = BedManagerAgent(session)
+
+        general = await agent.evaluate({"recommended_care_level": "GENERAL"}, encounter, "HOSP-DEFAULT")
+        emergency = await agent.evaluate({"recommended_care_level": "EMERGENCY"}, encounter, "HOSP-DEFAULT")
+        intensive = await agent.evaluate({"recommended_care_level": "ICU"}, encounter, "HOSP-DEFAULT")
+
+        assert general["recommended_department_id"] == "DEP-WA"
+        assert general["recommended_bed_id"].startswith("BED-WA-")
+        assert emergency["recommended_department_id"] == "DEP-ER"
+        assert emergency["recommended_bed_id"].startswith("BED-ER-")
+        assert intensive["recommended_department_id"] == "DEP-ICU"
+        assert intensive["recommended_bed_id"].startswith("BED-ICU-")
+
+
+@pytest.mark.asyncio
+async def test_staff_matching_uses_hospital_wide_fallback_when_unit_has_no_team(test_db):
+    async with test_db() as session:
+        env = await seed_workflow_env(session)
+        encounter = await session.get(Encounter, env["enc_crit"])
+        icu_staff_result = await session.execute(select(Staff).where(Staff.department_id == "DEP-ICU"))
+        for staff in icu_staff_result.scalars().all():
+            staff.status = "OFF_SHIFT"
+        await session.flush()
+
+        result = await StaffSchedulerAgent(session).evaluate(
+            triage_output={"recommended_care_level": "ICU"},
+            bed_output={"recommended_department_id": "DEP-ICU"},
+            encounter=encounter,
+            tenant_id="HOSP-DEFAULT"
+        )
+
+        assert result["assigned_doctor_id"] is not None
+        assert result["assigned_nurse_id"] is not None
+        assert "hospital-wide fallback" in result["rationale"]
+
+
+@pytest.mark.asyncio
+async def test_inpatient_bed_recommendation_creates_human_approval(test_db):
+    async with test_db() as session:
+        env = await seed_workflow_env(session)
+        state = await HospitalWorkflowCoordinator(session).coordinate_workflow(
+            encounter_id=env["enc_rout"],
+            tenant_id="HOSP-DEFAULT",
+            force_recalculate=True
+        )
+
+        assert state.recommendation.recommended_bed_id
+        assert state.recommendation.approval_item_id
+        assert state.approval_status == "PENDING"
+        assert state.workflow_status == "APPROVAL_PENDING"
+
+
+@pytest.mark.asyncio
+async def test_saved_workflow_recommendation_can_be_reloaded(auth_client, test_db):
+    async with test_db() as session:
+        env = await seed_workflow_env(session)
+        await HospitalWorkflowCoordinator(session).coordinate_workflow(
+            encounter_id=env["enc_rout"],
+            tenant_id="HOSP-DEFAULT",
+            force_recalculate=True
+        )
+
+    response = await auth_client.post(
+        "/api/v1/clinical-intelligence/workflow-recommendations",
+        json=[env["enc_rout"]]
+    )
+
+    assert response.status_code == 200
+    result = response.json()[0]
+    assert result["recommendation"]["recommended_bed_id"].startswith("BED-WA-")
+    assert result["recommendation"]["approval_item_id"]
+    assert result["workforce_assessment"]["assigned_doctor_id"] == "DOC-004"

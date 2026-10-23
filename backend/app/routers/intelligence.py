@@ -1,10 +1,12 @@
 import logging
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.staff import Staff
+from app.models.agent import AgentDecision, ApprovalItem
 from app.auth.dependencies import require_roles, get_current_staff, get_current_tenant
 from app.services.clinical_intelligence_service import ClinicalIntelligenceService
 from app.services.intelligence_engine_service import IntelligenceEngineService
@@ -18,6 +20,85 @@ from app.schemas.hospital_workflow import HospitalWorkflowState
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/clinical-intelligence", tags=["Clinical Intelligence & Decision Support"])
+
+
+@router.post("/workflow-recommendations")
+async def get_workflow_recommendations(
+    encounter_ids: List[str] = Body(..., min_length=1, max_length=100),
+    current_staff: Staff = Depends(require_roles(["ADMINISTRATOR", "DOCTOR", "CHARGE_NURSE", "NURSE"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Return the latest saved recommendation for each requested encounter in the caller's tenant."""
+    decisions_result = await db.execute(
+        select(AgentDecision)
+        .where(
+            AgentDecision.tenant_id == current_staff.tenant_id,
+            AgentDecision.agent_id == "MultiAgentCoordinator",
+            AgentDecision.encounter_id.in_(encounter_ids),
+        )
+        .order_by(AgentDecision.created_at.desc())
+    )
+    latest_by_encounter = {}
+    for decision in decisions_result.scalars().all():
+        latest_by_encounter.setdefault(decision.encounter_id, decision)
+
+    decision_ids = [decision.id for decision in latest_by_encounter.values()]
+    approvals_by_decision = {}
+    if decision_ids:
+        approvals_result = await db.execute(
+            select(ApprovalItem)
+            .where(
+                ApprovalItem.tenant_id == current_staff.tenant_id,
+                ApprovalItem.decision_id.in_(decision_ids),
+            )
+            .order_by(ApprovalItem.created_at.desc())
+        )
+        for approval in approvals_result.scalars().all():
+            approvals_by_decision.setdefault(approval.decision_id, approval)
+
+    recommendations = []
+    for encounter_id, decision in latest_by_encounter.items():
+        proposed = decision.proposed_action or {}
+        context = proposed.get("decision_context") or {}
+        bed_data = context.get("bed_resources") or {}
+        staff_data = dict(context.get("staffing") or {})
+        if proposed.get("assigned_doctor_id"):
+            staff_data["assigned_doctor_id"] = proposed["assigned_doctor_id"]
+        if proposed.get("assigned_nurse_id"):
+            staff_data["assigned_nurse_id"] = proposed["assigned_nurse_id"]
+        approval = approvals_by_decision.get(decision.id)
+        approval_status = approval.status if approval else "NOT_REQUIRED"
+        bed_id = proposed.get("target_bed_id") or proposed.get("bed_id") or bed_data.get("recommended_bed_id")
+        department_id = proposed.get("target_department_id") or bed_data.get("recommended_department_id")
+        if approval_status == "PENDING":
+            workflow_status = "APPROVAL_PENDING"
+        elif approval_status in {"REJECT", "REJECTED"} or decision.status in {"REJECT", "REJECTED"}:
+            workflow_status = "REJECTED"
+        elif approval_status in {"APPROVE", "APPROVED", "MODIFY", "MODIFIED"}:
+            workflow_status = "ALLOCATED" if bed_id else "APPROVED"
+        else:
+            workflow_status = "RECOMMENDATION_READY"
+
+        recommendations.append({
+            "encounter_id": encounter_id,
+            "workflow_status": workflow_status,
+            "approval_status": approval_status,
+            "triage_result": context.get("triage"),
+            "workforce_assessment": staff_data,
+            "resource_match_result": bed_data,
+            "recommendation": {
+                "encounter_id": encounter_id,
+                "patient_id": proposed.get("patient_id"),
+                "recommended_department": department_id,
+                "recommended_bed_id": bed_id,
+                "approval_item_id": approval.id if approval else None,
+                "decision_id": decision.id,
+                "triage_rationale": decision.reasoning,
+                "candidate_alternatives": decision.alternatives or [],
+                "human_approval_required": bool(approval),
+            },
+        })
+    return recommendations
 
 
 @router.get("/{encounter_id}")

@@ -19,3 +19,8 @@ export async function getOptimizationRun(encounterId) {
 export async function coordinateHospitalWorkflow(encounterId, data) {
   return apiPost(`/clinical-intelligence/${encounterId}/workflow-coordinate`, data || {});
 }
+
+export async function getWorkflowRecommendations(encounterIds) {
+  if (!encounterIds?.length) return [];
+  return apiPost('/clinical-intelligence/workflow-recommendations', encounterIds);
+}

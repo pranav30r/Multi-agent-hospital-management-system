@@ -275,7 +275,12 @@ class HospitalWorkflowCoordinator:
             except Exception as wf_err:
                 logger.debug(f"Workflow agent optional protocol mapping skipped: {wf_err}")
 
-            target_dept = "DEP-ICU" if triage_result.recommended_care_level == "ICU" else "DEP-ER" if triage_result.recommended_care_level == "EMERGENCY" else "DEP-GEN"
+            target_dept = (
+                "DEP-ICU" if triage_result.recommended_care_level == "ICU"
+                else "DEP-ER" if triage_result.recommended_care_level == "EMERGENCY"
+                else "DEP-WA" if triage_result.recommended_care_level == "GENERAL"
+                else "DEP-OPD"
+            )
             next_steps = [
                 f"Admit patient to {target_dept}",
                 "Initiate continuous vitals monitoring",
@@ -338,6 +343,12 @@ class HospitalWorkflowCoordinator:
                 rationale=str(bed_raw.get("rationale") or f"Matched bed {bed_raw.get('recommended_bed_id')} based on clinical tier"),
                 timestamp=now_iso
             )
+            if resource_match_result.recommended_department_id:
+                patient_flow_result.target_department = resource_match_result.recommended_department_id
+                patient_flow_result.rationale = (
+                    f"Routing patient to {resource_match_result.recommended_department_id} based on "
+                    f"ESI-{triage_result.esi_level} urgency and live compatible-bed availability."
+                )
         except Exception as e:
             logger.exception(f"BedManagerAgent failed for encounter {encounter_id}: {e}")
             agent_errors.append({"agent": "bed_manager_agent", "error": str(e)})
@@ -551,13 +562,40 @@ class HospitalWorkflowCoordinator:
             )
             decision_id = coord_res.get("decision_id") or coord_res.get("id")
             approval_item_id = coord_res.get("approval_item_id")
+            proposed_action = coord_res.get("proposed_action") or {}
+            selected_bed_id = proposed_action.get("target_bed_id") or proposed_action.get("bed_id")
+            selected_department_id = proposed_action.get("target_department_id")
+            if selected_bed_id:
+                resource_match_result.recommended_bed_id = selected_bed_id
+                selected_bed = await self.db.get(Bed, selected_bed_id)
+                if selected_bed:
+                    resource_match_result.recommended_department_id = selected_bed.department_id
+                    resource_match_result.bed_type = selected_bed.bed_type
+                    patient_flow_result.target_department = selected_bed.department_id
+                elif selected_department_id:
+                    resource_match_result.recommended_department_id = selected_department_id
+                    patient_flow_result.target_department = selected_department_id
+                consolidated_rec.recommended_bed_id = selected_bed_id
+                consolidated_rec.recommended_department = resource_match_result.recommended_department_id
+            selected_doctor_id = proposed_action.get("assigned_doctor_id")
+            selected_nurse_id = proposed_action.get("assigned_nurse_id")
+            if selected_doctor_id:
+                workforce_assessment.assigned_doctor_id = selected_doctor_id
+            if selected_nurse_id:
+                workforce_assessment.assigned_nurse_id = selected_nurse_id
             consolidated_rec.decision_id = decision_id
             consolidated_rec.approval_item_id = approval_item_id
+            if approval_item_id:
+                workflow_status = "APPROVAL_PENDING"
+                approval_status = "PENDING"
+                consolidated_rec.human_approval_required = True
+                consolidated_rec.workflow_status = workflow_status
         except Exception as e:
             logger.warning(f"CoordinatorAgent persistence fallback: {e}")
 
         # Post-commit Event Bus Broadcast
-        event_name = "APPROVAL_REQUIRED" if escalation_result.requires_human_approval else "RECOMMENDATION_GENERATED"
+        approval_required = bool(approval_item_id or escalation_result.requires_human_approval)
+        event_name = "APPROVAL_REQUIRED" if approval_required else "RECOMMENDATION_GENERATED"
         try:
             await event_bus.publish({
                 "event_type": event_name,
@@ -572,7 +610,7 @@ class HospitalWorkflowCoordinator:
                     "recommended_bed_id": resource_match_result.recommended_bed_id,
                     "target_department": patient_flow_result.target_department,
                     "approval_item_id": approval_item_id,
-                    "requires_human_approval": escalation_result.requires_human_approval
+                    "requires_human_approval": approval_required
                 }
             }, tenant_id=enc_tenant)
         except Exception as ev_err:
@@ -605,7 +643,7 @@ class HospitalWorkflowCoordinator:
 
         logger.info(
             f"Hospital workflow {workflow_id} completed for encounter {encounter_id}: "
-            f"status={workflow_status}, approval_required={escalation_result.requires_human_approval}"
+            f"status={workflow_status}, approval_required={approval_required}"
         )
         return workflow_state
 
